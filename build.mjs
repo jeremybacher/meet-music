@@ -52,9 +52,9 @@ if (watch) {
     ],
   })
   await ctx.watch()
-  console.log('Observando cambios. Cargá dist/ en chrome://extensions y recargá tras cada build.')
+  console.log('Watching for changes. Load dist/ in chrome://extensions and reload after each build.')
 } else {
   await build(config)
   copyStatic()
-  console.log(`Listo. Cargá ${outdir}/ en chrome://extensions con el modo desarrollador activado.`)
+  console.log(`Done. Load ${outdir}/ in chrome://extensions with Developer mode on.`)
 }

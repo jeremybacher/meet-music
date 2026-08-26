@@ -1,8 +1,8 @@
-# Contribuir
+# Contributing
 
-## Arrancar
+## Getting started
 
-El proyecto usa **pnpm**. Con Node 22 ya viene por corepack:
+This project uses **pnpm**. Node 22 ships it through corepack:
 
 ```bash
 corepack enable
@@ -10,74 +10,75 @@ pnpm install
 pnpm dev
 ```
 
-Cargá `dist/` en `chrome://extensions` con **Modo desarrollador** activado. Después de cada build hay
-que darle a recargar en esa misma pantalla.
+Load `dist/` in `chrome://extensions` with **Developer mode** on. Hit reload there after each build.
 
-Antes de abrir un PR:
+Before opening a PR:
 
 ```bash
 pnpm typecheck && pnpm test && pnpm build
 ```
 
-Es lo mismo que corre CI.
+That is exactly what CI runs.
 
-## Probarlo de verdad
+## Testing it for real
 
-**Los tests no cubren lo que más se rompe.** El patch de audio y el transporte por el chat dependen
-del DOM de Meet y de APIs del navegador que no se pueden simular con fidelidad, así que hay que
-probarlos a mano con **dos cuentas de Google** en una reunión real (o una normal y otra en incógnito).
+**The tests do not cover what breaks most.** The audio patch and the chat transport depend on Meet's
+DOM and on browser APIs that cannot be simulated faithfully, so they have to be exercised by hand
+with **two Google accounts** in a real meeting (or one normal and one incognito).
 
-Si tocaste audio o el transporte, verificá al menos esto:
+If you touched audio or the transport, check at least this:
 
-1. La otra cuenta escucha la música.
-2. Con música sonando, mové "Music in the meeting" de 0 a 100 mientras hablás: **el volumen de tu voz
-   no debe cambiar** y se te tiene que entender en todo el recorrido.
-3. Pasar de canción no corta el audio ni deja el título viejo.
-4. *Mute my voice* te calla y la música sigue sonando para los demás.
-5. Agregar una canción desde la segunda cuenta aparece en la cola de la primera.
+1. The other account hears the music.
+2. With music playing, sweep "Music in the meeting" from 0 to 100 while talking: **your voice volume
+   must not change** and you must stay intelligible the whole way.
+3. Changing song does not cut the audio or leave the old title behind.
+4. *Mute my voice* silences you while the music keeps playing for everyone else.
+5. Adding a song from the second account shows up in the first account's queue.
 
-El panel trae diagnóstico para no adivinar: el tooltip de la línea de estado dice de dónde sale el
-audio, y el de la cola dice `chat open · send button found · sent N · received N`. Si algo falla,
-esos números dicen dónde se corta.
+The panel carries diagnostics so you do not have to guess: the status line's tooltip says where the
+audio comes from, and the queue line's says `chat open · send button found · sent N · received N`.
+When something fails, those numbers say where it breaks.
 
-## Cómo está pensado
+## How this is meant to hold together
 
-Vale la pena conocer estas cuatro decisiones antes de tocar el código:
+Four decisions worth knowing before touching the code:
 
-- **Instalada pero ociosa, la extensión no toca tu audio.** Sin música, `getUserMedia` devuelve el
-  micrófono tal cual y ni siquiera se crea un `AudioContext`. Si agregás algo al camino de la voz,
-  que sea sólo cuando hay música.
-- **La voz no pasa por ningún nodo de procesamiento**, sólo por una ganancia. Hay un test que
-  verifica la topología del grafo; si lo rompés, es a propósito o es un bug.
-- **El DOM de Meet no es una API.** Los selectores están centralizados y son heurísticos a propósito,
-  y siempre hay un camino de degradación: si algo no se encuentra, la extensión avisa y sigue
-  funcionando en modo individual en vez de romperse.
-- **El chat es un canal caro.** Cada mensaje es una línea visible para quien no tiene la extensión.
-  Antes de mandar algo nuevo, pensá si hace falta y si conviene agruparlo (ver `LATEST_WINS` y el
-  retardo del volumen).
+- **Installed but idle, the extension does not touch your audio.** With no music, `getUserMedia`
+  returns the microphone untouched and no `AudioContext` is even created. If you add something to the
+  voice path, make it happen only while music is playing.
+- **The voice passes through no processing node**, only a gain. A test verifies the graph topology;
+  if you break it, that is either deliberate or a bug.
+- **Meet's DOM is not an API.** Selectors are centralised and heuristic on purpose, and there is
+  always a degradation path: if something is not found, the extension says so and keeps working in
+  solo mode instead of falling over.
+- **The chat is an expensive channel.** Every message is a visible line for anyone without the
+  extension. Before sending something new, ask whether it is needed and whether it should be
+  coalesced (see `LATEST_WINS` and the volume debounce).
 
-## Estilo
+## Style
 
-- Comentarios y documentación **en español**; todo lo que ve el usuario, **en inglés**.
-- Los patrones que buscan cosas en el DOM de Meet son **multilingües**: Meet se muestra en el idioma
-  de la cuenta de cada usuario, no en el de la extensión.
-- Comentá el **por qué**, no el qué. Los comentarios que más valen son los que explican una decisión
-  que parece rara y no lo es.
-- Sin dependencias nuevas salvo que resuelvan algo que no se puede hacer a mano. Hoy son dos:
-  `preact` y `esbuild`.
+- Code comments are **in Spanish**, the maintainer's language. Everything a user sees is **in
+  English**. Pull requests in either language are welcome.
+- Patterns that look for things in Meet's DOM are **multilingual**: Meet renders in each user's own
+  account language, not the extension's.
+- Comment the **why**, not the what. The comments that earn their keep are the ones explaining a
+  decision that looks odd and is not.
+- No new dependencies unless they solve something that cannot reasonably be done by hand. Today there
+  are two: `preact` and `esbuild`.
 
-## Reportar un problema
+## Reporting a problem
 
-Con el audio, incluí:
+For audio issues, include:
 
-- Qué dice la línea de diagnóstico del panel (y su tooltip).
-- Si el problema es tuyo o de quien escucha — **no es lo mismo** y lleva a diagnósticos opuestos.
-- Versión de Chrome y sistema operativo.
+- What the panel's diagnostics line says (and its tooltip).
+- Whether the problem is yours or the listeners' — **they are not the same** and lead to opposite
+  diagnoses.
+- Chrome version and operating system.
 
-## Publicar una versión
+## Cutting a release
 
-1. Subí `version` en `src/static/manifest.json` y en `package.json`.
-2. Etiquetá: `git tag v0.2.0 && git push --tags`.
+1. Bump `version` in `src/static/manifest.json` and `package.json`.
+2. Tag it: `git tag v0.2.0 && git push --tags`.
 
-El workflow de release compila, corre los tests, **verifica que la etiqueta coincida con la versión
-del manifest** y publica el zip listo para instalar.
+The release workflow builds, runs the tests, **checks that the tag matches the manifest version** and
+publishes the ready-to-install zip.

@@ -1,199 +1,197 @@
 # Meet Music
 
-Cola de música compartida dentro de Google Meet. **El resto de la reunión escucha sin instalar
-nada**: el audio va mezclado en la pista de micrófono de quien pone la música.
+Shared music queue inside Google Meet. **Everyone else hears it without installing anything**: the
+audio is mixed into the microphone track of whoever is playing.
 
-> La interfaz de la extensión está en inglés; esta documentación y los comentarios del código, en
-> español. Los patrones que buscan elementos del DOM de Meet siguen siendo multilingües, porque Meet
-> se muestra en el idioma de la cuenta de cada usuario.
+> The extension UI and this documentation are in English. Code comments are in Spanish, the
+> maintainer's language. Patterns that look for elements in Meet's DOM stay multilingual on purpose,
+> because Meet renders in each user's own account language.
 
 ---
 
-## Instalación
+## Install
 
-**Desde una release** (recomendado, no requiere compilar):
+**From a release** (recommended, nothing to compile):
 
-1. Bajá el `.zip` de la [última release](../../releases/latest) y descomprimilo.
-2. Abrí `chrome://extensions` y activá **Modo desarrollador**.
-3. **Cargar descomprimida** → elegí la carpeta.
+1. Download the `.zip` from the [latest release](../../releases/latest) and unzip it.
+2. Open `chrome://extensions` and turn on **Developer mode**.
+3. Click **Load unpacked** and pick the unzipped folder.
 
-Guardá la carpeta: Chrome carga la extensión desde ahí, así que borrarla la desinstala.
+Keep the folder around: Chrome loads the extension from it, so deleting it uninstalls the extension.
 
-**Desde el código**:
+**From source**:
 
 ```bash
-corepack enable   # el proyecto usa pnpm
+corepack enable   # this project uses pnpm
 pnpm install
-pnpm build        # deja todo en dist/
+pnpm build        # everything lands in dist/
 ```
 
-Y cargá `dist/` con los mismos pasos.
+Then load `dist/` with the same steps.
 
-Requiere Chrome 116 o superior.
-
----
-
-## Uso
-
-Entrá a una reunión de Meet: aparece un botón con una nota musical al lado de los controles. El
-panel no existe fuera de una llamada.
-
-1. **Pegá el link de un video de YouTube.** No hay búsqueda por nombre en esta versión.
-2. **Play music here** abre una pestaña de YouTube con esa canción y empieza a mezclar. La primera
-   vez Chrome puede pedir un clic en esa pestaña para permitir el audio: el panel te avisa y te
-   lleva, y volvés solo.
-3. **Regulá el volumen.** Quien reproduce tiene tres perillas independientes —música en la reunión,
-   música sólo para sí, y su voz—; el resto ve botones de subir y bajar, que cambian el volumen para
-   todos.
-4. **Mute my voice** te calla sin cortar la música. El botón de mutear de Meet no puede hacer eso,
-   porque música y voz van en una sola pista mezclada.
-
-**Usá auriculares.** Con parlantes, tu micrófono vuelve a captar la música y la reunión la escucha
-dos veces, ligeramente corrida.
-
-### Cola compartida
-
-Para que otros agreguen canciones necesitan **esta misma extensión instalada**. La cola viaja por el
-chat de Meet, en mensajes cifrados y ocultos: es el único canal común entre participantes cuando no
-hay servidor.
-
-**Cualquiera puede agregar, saltear, pausar y mover el volumen.** No hay votación ni permisos: la
-cola es de la reunión, no de quien la puso. **Stop and clear queue** corta la música, vacía la cola y
-libera el puesto, así que cualquiera puede arrancar de cero.
-
-El panel de chat de Meet **se mantiene abierto** mientras esto está activo: con el panel cerrado Meet
-ni siquiera monta los mensajes entrantes, así que dejarías de recibir lo que hacen los demás. Si lo
-cerrás tres veces, la extensión deja de insistir y te da a elegir.
-
-Se puede apagar en ⚙ → *Share the queue with the meeting*, a costa de quedarse sin cola compartida.
+Requires Chrome 116 or newer.
 
 ---
 
-## Limitaciones conocidas
+## Use
 
-Ninguna es un bug: salen del modelo de inyectar audio en el micrófono.
+Join a Meet call and a music-note button appears next to the controls. The panel does not exist
+outside a call.
 
-- **La música se escucha peor que el original.** Meet codifica la pista de micrófono pensando en voz.
-  Es el precio de que nadie más tenga que instalar nada.
-- **Silenciarte con el botón de Meet corta también la música**, porque es una sola pista. Para eso
-  está *Mute my voice*.
-- **El volumen no puede ser individual.** A quien escucha le llega la música fusionada con la voz de
-  quien la pone; bajarla bajaría también su voz.
-- **Anuncios de YouTube.** Sin Premium suenan en la reunión. La extensión los detecta y baja el
-  volumen sola mientras duran.
-- **Spotify no es posible** en este modelo: reproduce con DRM y el audio protegido no se puede
-  capturar.
-- **Quien no tenga la extensión ve texto raro en el chat** cuando la cola está compartida.
-- **Si quien reproduce cierra la pestaña sin parar**, los demás lo siguen viendo como DJ hasta que
-  alguien usa *Stop and clear queue*.
-- **El DOM de Meet cambia sin aviso.** Si el transporte por chat deja de andar, la extensión se
-  degrada sola a modo individual en vez de romperse.
+1. **Paste a YouTube video link.** There is no search by name in this version.
+2. **Play music here** opens a YouTube tab with that song and starts mixing. The first time, Chrome
+   may need a click in that tab to allow audio — the panel tells you and takes you there, and you
+   come right back.
+3. **Set the volume.** Whoever is playing gets three independent knobs — music in the meeting, music
+   just for them, and their own voice. Everyone else gets up and down buttons, which change the
+   volume for the whole meeting.
+4. **Mute my voice** silences you without cutting the music. Meet's own mute button cannot do that,
+   because music and voice travel as a single mixed track.
+
+**Use headphones.** Through speakers your microphone picks the music back up and the meeting hears it
+twice, slightly out of sync.
+
+### Shared queue
+
+For others to add songs they need **this same extension installed**. The queue travels through the
+Meet chat, in encrypted and hidden messages: it is the only channel participants share when there is
+no server.
+
+**Anyone can add, skip, pause and change the volume.** No voting, no permissions — the queue belongs
+to the meeting, not to whoever started it. **Stop and clear queue** stops the music, empties the queue
+and frees the spot, so anyone can start from scratch.
+
+The Meet chat panel **is kept open** while this is on: with the panel closed Meet does not even mount
+incoming messages, so you would stop receiving what others do. If you close it three times, the
+extension stops insisting and lets you choose.
+
+You can turn it off in ⚙ → *Share the queue with the meeting*, at the cost of losing the shared queue.
 
 ---
 
-## Cómo funciona
+## Known limitations
 
-Google Meet no expone ninguna API para extensiones, así que no hay forma oficial de inyectar audio.
-La extensión intercepta `getUserMedia` en la página de Meet y le devuelve un track mezclado: tu voz
-más la música.
+None of these are bugs — they follow from injecting audio into the microphone.
+
+- **Music sounds worse than the original.** Meet encodes the microphone track for speech. That is the
+  price of nobody else having to install anything.
+- **Muting yourself with Meet's button also cuts the music**, because it is a single track. That is
+  what *Mute my voice* is for.
+- **Volume cannot be per-person.** Listeners get the music fused with the player's voice; turning it
+  down would turn their voice down too.
+- **YouTube ads.** Without Premium they play into the meeting. The extension detects them and lowers
+  the volume while they last.
+- **Spotify is not possible** in this model: it plays under DRM, and protected audio cannot be
+  captured.
+- **People without the extension see odd text in the chat** while the queue is shared.
+- **If the player closes their tab without stopping**, everyone else keeps seeing them as the DJ until
+  someone uses *Stop and clear queue*.
+- **Meet's DOM changes without notice.** If the chat transport breaks, the extension degrades to
+  solo mode instead of falling over.
+
+---
+
+## How it works
+
+Google Meet exposes no extension API, so there is no official way to inject audio. The extension
+intercepts `getUserMedia` on the Meet page and hands back a mixed track: your voice plus the music.
 
 ```
-┌─ Navegador de quien reproduce ─────────────────────────────────────┐
-│  Pestaña de YouTube (fijada, en segundo plano)                     │
-│  └─ content script: Web Audio sobre el <video>                     │
+┌─ Browser of whoever is playing ────────────────────────────────────┐
+│  YouTube tab (pinned, in the background)                           │
+│  └─ content script: Web Audio over the <video>                     │
 │            │                                                       │
-│            │ WebRTC local          Service Worker                  │
-│            │ (candidatos de host)  └─ relé de señalización         │
+│            │ local WebRTC          Service worker                  │
+│            │ (host candidates)     └─ signalling relay             │
 │            ▼                                                       │
-│  Pestaña de Meet                                                   │
-│  ├─ [ISOLATED] panel + transporte por el chat de Meet              │
-│  └─ [MAIN] patch de getUserMedia + mezclador                       │
+│  Meet tab                                                          │
+│  ├─ [ISOLATED] panel + transport over the Meet chat                │
+│  └─ [MAIN] getUserMedia patch + mixer                              │
 └────────────────────────────────────────────────────────────────────┘
-        │ audio mezclado, vía Meet
-        ▼  el resto de la reunión, sin instalar nada
+        │ mixed audio, through Meet
+        ▼  everyone else, without installing anything
 ```
 
-### El audio
+### The audio
 
-Se toma con `createMediaElementSource` sobre el `<video>` de una página real de YouTube. A diferencia
-de `captureStream()`, se ata **al elemento** y no al recurso, así que sobrevive los cambios de
-canción; `captureStream()` queda como plan B. En una página real, además, la detección de anuncios es
-confiable (la clase `ad-showing`) en vez de una heurística.
+It is picked up with `createMediaElementSource` over the `<video>` of a real YouTube page. Unlike
+`captureStream()`, that binds **to the element** rather than to the resource, so it survives song
+changes; `captureStream()` is kept as a fallback. On a real page, ad detection is also reliable (the
+`ad-showing` class) instead of a heuristic.
 
-**`chrome.tabCapture` no sirve**: sólo puede apuntar a pestañas donde el usuario haya *invocado* la
-extensión (clic en el ícono, atajo, menú contextual), y una pestaña de reproductor en segundo plano
-nunca cumple eso.
+**`chrome.tabCapture` does not work here**: it can only target tabs where the user has *invoked* the
+extension (toolbar icon, shortcut, context menu), and a background player tab never qualifies.
 
-Dos decisiones deliberadas sobre la voz:
+Two deliberate decisions about the voice:
 
-- **Mientras no haya música, la extensión no toca nada.** `getUserMedia` devuelve el micrófono tal
-  cual y ni siquiera se crea un `AudioContext`. Al empezar la música se arma el mezclador y se cambia
-  la pista en caliente con `RTCRtpSender.replaceTrack()`.
-- **La voz no pasa por ningún nodo de procesamiento**, sólo por una ganancia. El limitador cuelga de
-  la rama de música. Hay un test que verifica esa topología.
+- **While there is no music, the extension touches nothing.** `getUserMedia` returns the microphone
+  untouched and no `AudioContext` is even created. When music starts, the mixer is built and the
+  track is swapped live with `RTCRtpSender.replaceTrack()`.
+- **The voice passes through no processing node**, only a gain. The limiter hangs off the music
+  branch. A test verifies that topology.
 
-### El transporte
+### The transport
 
-Los mensajes van **cifrados con AES-GCM**, con la clave derivada del **código de la reunión**: un
-secreto que ya comparten todos los de adentro y nadie de afuera, sin nada que configurar.
+Messages are **encrypted with AES-GCM**, keyed from the **meeting code**: a secret everyone inside
+already shares and nobody outside has, with nothing to configure.
 
-- La cola es ilegible para cualquiera que no esté en esa reunión.
-- **Nadie puede inyectar órdenes escribiendo en el chat**: AES-GCM autentica, así que un mensaje que
-  no salió de la extensión no descifra y se descarta.
-- Enviar **nunca pisa lo que estés escribiendo**: si el campo tiene texto, el envío se posterga, y se
-  guarda y restaura el borrador y el foco.
+- The queue is unreadable to anyone not in that meeting.
+- **Nobody can inject commands by typing in the chat**: AES-GCM authenticates, so a message that did
+  not come from the extension fails to decrypt and is discarded.
+- Sending **never overwrites what you are typing**: if the field has text the send is deferred, and
+  the draft and focus are saved and restored.
 
-No pretende resistir a un participante malicioso de la propia reunión: quien tiene el código tiene la
-clave.
+It does not claim to resist a malicious participant of the meeting itself: whoever has the code has
+the key.
 
-Cada participante tiene un **id estable** separado del nombre visible. Van aparte a propósito: si la
-identidad fuera el nombre, dos personas con el nombre por defecto contarían como una sola.
+Each participant has a **stable id** kept separate from the display name. They are separate on
+purpose: if identity were the name, two people on the default name would count as one.
 
 ---
 
-## Desarrollo
+## Development
 
 ```bash
-pnpm dev        # esbuild en modo observación
-pnpm test           # 61 tests
+pnpm dev        # esbuild in watch mode
+pnpm test       # 61 tests
 pnpm typecheck
 pnpm build
 ```
 
-Tras cada build hay que recargar la extensión en `chrome://extensions`.
+Reload the extension in `chrome://extensions` after each build.
 
-Los tests cubren lo que se puede aislar: el reducer de la cola, el protocolo, el cifrado, el
-mezclador (con un `AudioContext` falso), el tema y el parsing de URLs. **El patch de audio y el
-transporte por chat se verifican a mano**, con dos cuentas de Google en una reunión real.
+Tests cover what can be isolated: the queue reducer, the protocol, the encryption, the mixer (with a
+fake `AudioContext`), theming and URL parsing. **The audio patch and the chat transport are verified
+by hand**, with two Google accounts in a real meeting.
 
-### Estructura
+### Layout
 
-| Archivo | Qué hace |
+| File | What it does |
 |---|---|
-| `src/content/mic-patch.ts` | Mundo MAIN. Intercepta `getUserMedia` y devuelve el track mezclado. |
-| `src/core/mixer.ts` | El grafo de Web Audio. Garantiza que la música no toque la voz. |
-| `src/content/session.ts` | Estado del panel, roles, cableado. |
-| `src/content/chat-transport.ts` | Cola compartida sobre el chat de Meet, sin pisar tus borradores. |
-| `src/core/crypto.ts` | AES-GCM con la clave derivada del código de la reunión. |
-| `src/core/sdp.ts` | Fuerza Opus estéreo y sin DTX en el enlace interno. |
-| `src/background/service-worker.ts` | Pestaña de YouTube y relé de señalización. |
-| `src/player/yt-content.ts` | Lado YouTube: toma el audio y controla el `<video>`. |
-| `src/player/yt-main.ts` | Mundo MAIN de YouTube: cambia de canción sin recargar. |
+| `src/content/mic-patch.ts` | MAIN world. Intercepts `getUserMedia` and returns the mixed track. |
+| `src/core/mixer.ts` | The Web Audio graph. Guarantees the music cannot touch the voice. |
+| `src/content/session.ts` | Panel state, roles, wiring. |
+| `src/content/chat-transport.ts` | Shared queue over the Meet chat, without clobbering your drafts. |
+| `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
+| `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |
+| `src/background/service-worker.ts` | YouTube tab and signalling relay. |
+| `src/player/yt-content.ts` | YouTube side: picks up the audio and drives the `<video>`. |
+| `src/player/yt-main.ts` | YouTube MAIN world: changes song without reloading. |
 
-### El ícono
+### The icon
 
-Los PNG de `src/static/icons/` se generan con Chrome headless a partir del **mismo path de Material
-`music_note`** que usa el botón flotante dentro de Meet, para que se reconozcan como lo mismo.
+The PNGs in `src/static/icons/` are generated with headless Chrome from the **same Material
+`music_note` path** the floating button inside Meet uses, so they read as the same thing.
 
 ---
 
-## Contribuir
+## Contributing
 
-Ver [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Licencia
+## License
 
 [MIT](LICENSE).
 
-Reproducir música en una reunión es responsabilidad de quien la pone. Esta extensión no redistribuye
-ni almacena audio: sólo enruta lo que YouTube ya está reproduciendo en tu propio navegador.
+Playing music in a meeting is the responsibility of whoever plays it. This extension neither
+redistributes nor stores audio: it only routes what YouTube is already playing in your own browser.
