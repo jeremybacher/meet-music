@@ -1,0 +1,58 @@
+name: Release
+
+# Publica el zip listo para instalar cuando se etiqueta una versión (v0.1.0, v0.2.0…).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # La versión del manifest tiene que coincidir con la etiqueta: si no, la gente instala
+      # un zip que dice una versión distinta de la que descargó.
+      - name: Check manifest version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(node -p "require('./dist/manifest.json').version")
+          if [ "$tag" != "$manifest" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match manifest version $manifest"
+            exit 1
+          fi
+
+      - name: Package the unpacked extension
+        run: cd dist && zip -r ../meet-music-${{ github.ref_name }}.zip .
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: meet-music-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            1. Download `meet-music-${{ github.ref_name }}.zip` below and unzip it.
+            2. Open `chrome://extensions` and turn on **Developer mode**.
+            3. Click **Load unpacked** and pick the unzipped folder.
+            4. Join a Google Meet call — a music button appears next to the controls.
+
+            Keep the unzipped folder around: Chrome loads the extension from it, so deleting it
+            uninstalls the extension.

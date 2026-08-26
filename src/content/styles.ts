@@ -1,0 +1,216 @@
+/**
+ * CSS del panel. Vive en un string porque se inyecta dentro de un shadow root: así el CSS de Meet
+ * no nos toca y el nuestro no le toca nada a Meet.
+ *
+ * Sigue el lenguaje visual de Google Meet: superficies grises neutras (nada de tintes), azul de
+ * Google como acento, botones tipo píldora, radios amplios y la familia Google Sans. Los colores
+ * son variables definidas dos veces —`[data-theme="light"]` y `[data-theme="dark"]`— y el panel
+ * resuelve cuál usar; por defecto sigue al navegador.
+ */
+export const PANEL_CSS = `
+:host { all: initial; }
+
+
+* {
+  box-sizing: border-box;
+  font-family: "Google Sans", "Google Sans Text", Roboto, system-ui, -apple-system, Arial, sans-serif;
+}
+
+.root[data-theme="dark"] {
+  --bg: #1e1f20;
+  --bg-sunken: #131314;
+  --bg-raised: #2d2f31;
+  --bg-hover: #37393b;
+  --border: #444746;
+  --text: #e3e3e3;
+  --text-dim: #c4c7c5;
+  --text-faint: #9aa0a6;
+  --accent: #a8c7fa;
+  --accent-hover: #c2ddff;
+  --accent-text: #062e6f;
+  --live: #0b2a5b;
+  --live-text: #a8c7fa;
+  --warn-bg: #402d00;
+  --warn-text: #fdd663;
+  --error-bg: #4d1f1c;
+  --error-text: #f2b8b5;
+  --info-bg: #0b2a5b;
+  --info-text: #a8c7fa;
+  --shadow: 0 8px 28px rgba(0,0,0,.45);
+  --launcher-shadow: 0 2px 8px rgba(0,0,0,.35);
+  --launcher-bg: #3c4043;
+  --launcher-bg-hover: #4a4d51;
+  --launcher-fg: #e3e3e3;
+  --launcher-on-bg: #a8c7fa;
+  --launcher-on-fg: #062e6f;
+  --focus-ring: #a8c7fa;
+}
+
+.root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-sunken: #f8fafd;
+  --bg-raised: #f0f4f9;
+  --bg-hover: #e1e6ec;
+  --border: #c4c7c5;
+  --text: #1f1f1f;
+  --text-dim: #444746;
+  --text-faint: #5f6368;
+  --accent: #0b57d0;
+  --accent-hover: #0842a0;
+  --accent-text: #ffffff;
+  --live: #d3e3fd;
+  --live-text: #0842a0;
+  --warn-bg: #fef7e0;
+  --warn-text: #8f6100;
+  --error-bg: #fce8e6;
+  --error-text: #a50e0e;
+  --info-bg: #e8f0fe;
+  --info-text: #0b57d0;
+  --shadow: 0 8px 28px rgba(60,64,67,.22);
+  --launcher-shadow: 0 2px 8px rgba(60,64,67,.25);
+  --launcher-bg: #e8eaed;
+  --launcher-bg-hover: #dadce0;
+  --launcher-fg: #1f1f1f;
+  --launcher-on-bg: #0b57d0;
+  --launcher-on-fg: #ffffff;
+  --focus-ring: #0b57d0;
+}
+
+/* Los flotantes van en fila, como la barra de controles de Meet. */
+.dock {
+  position: fixed; right: 18px; bottom: 92px; z-index: 2147483000;
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* Mismas proporciones que los botones de la barra de Meet: círculo de 48px con ícono de 24px. */
+.launcher {
+  position: relative;
+  width: 48px; height: 48px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--launcher-bg); color: var(--launcher-fg);
+  box-shadow: var(--launcher-shadow);
+  transition: background-color .15s ease, color .15s ease;
+}
+.launcher svg { width: 24px; height: 24px; display: block; fill: currentColor; }
+.launcher:hover { background: var(--launcher-bg-hover); }
+.launcher:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.launcher[data-active="true"] { background: var(--launcher-on-bg); color: var(--launcher-on-fg); }
+
+/* Voz silenciada: el mismo rojo con el que Meet marca el micrófono cortado. */
+.launcher[data-muted="true"] { background: #ea4335; color: #ffffff; }
+.launcher[data-muted="true"]:hover { background: #d33426; }
+
+/* Punto de "sonando", como el indicador de actividad de los controles de Meet. */
+.launcher .dot {
+  position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%;
+  background: #34a853; border: 2px solid var(--launcher-bg);
+}
+
+/* Meet redondea sus paneles laterales a 16px y los apoya con una sombra suave, sin borde duro. */
+.panel {
+  position: fixed; right: 18px; bottom: 150px; z-index: 2147483000;
+  width: 360px; max-height: min(76vh, 700px); display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text); border-radius: 16px;
+  box-shadow: var(--shadow); overflow: hidden; font-size: 14px;
+}
+
+header { display: flex; align-items: center; gap: 8px; padding: 16px 12px 12px 20px; }
+header h2 { margin: 0; font-size: 16px; font-weight: 400; flex: 1; letter-spacing: 0; }
+.badge {
+  font-size: 12px; padding: 4px 10px; border-radius: 100px;
+  background: var(--bg-raised); color: var(--text-dim);
+}
+.badge[data-tone="live"] { background: var(--live); color: var(--live-text); }
+
+/* Botones de ícono redondos con área táctil, como los de la cabecera de los paneles de Meet. */
+.icon-btn {
+  background: none; border: 0; color: var(--text-dim); cursor: pointer; font-size: 16px;
+  width: 36px; height: 36px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; flex: none;
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+.icon-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+.body { overflow-y: auto; padding: 4px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.banner { padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
+.banner[data-tone="warn"] { background: var(--warn-bg); color: var(--warn-text); }
+.banner[data-tone="error"] { background: var(--error-bg); color: var(--error-text); }
+.banner[data-tone="info"] { background: var(--info-bg); color: var(--info-text); }
+.banner button { margin-top: 10px; display: block; }
+
+.now { display: flex; gap: 12px; align-items: center; }
+.now img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--bg-raised); flex: none; }
+.now-meta { min-width: 0; flex: 1; }
+.now-title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Con la atribución, esta línea se alarga: que recorte en vez de desbordar el panel. */
+.now-sub {
+  color: var(--text-faint); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.empty { color: var(--text-faint); font-size: 13px; }
+
+/* Barra de progreso: además de mostrar, permite saltar a cualquier punto desde el propio Meet. */
+.progress {
+  height: 16px; display: flex; align-items: center; cursor: pointer; border: 0; padding: 0;
+  width: 100%; background: none;
+}
+.progress .track { height: 4px; width: 100%; background: var(--bg-hover); border-radius: 100px; overflow: hidden; }
+.progress .fill { display: block; height: 100%; background: var(--accent); border-radius: 100px; }
+.progress:hover .track { height: 6px; }
+.progress:disabled { cursor: default; }
+
+.controls { display: flex; gap: 8px; }
+
+/* Botones tipo píldora, que es la forma que usa Meet en toda su interfaz nueva. */
+button.action {
+  flex: 1; padding: 10px 20px; border-radius: 100px; border: 1px solid var(--border);
+  background: transparent; color: var(--accent); cursor: pointer; font-size: 14px; font-weight: 500;
+}
+button.action:hover:not(:disabled) { background: var(--bg-hover); }
+button.action:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+button.action:disabled { opacity: .38; cursor: default; }
+button.action[data-primary="true"] {
+  background: var(--accent); border-color: transparent; color: var(--accent-text);
+}
+button.action[data-primary="true"]:hover:not(:disabled) { background: var(--accent-hover); }
+
+.section-title { font-size: 12px; font-weight: 500; color: var(--text-faint); }
+
+.slider { display: grid; gap: 4px; }
+.slider-head { display: flex; justify-content: space-between; font-size: 13px; }
+.slider-head span:last-child { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.slider input { width: 100%; accent-color: var(--accent); }
+.slider[data-ducking="true"] .slider-head span:last-child::after { content: " · bajando"; color: var(--warn-text); }
+.hint { color: var(--text-faint); font-size: 12px; line-height: 1.5; }
+
+/* Volumen compartido: pasos discretos, no un slider. Cada toque es un pedido, no un ajuste fino. */
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper .level {
+  flex: 1; text-align: center; font-size: 15px; font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.stepper button.action { flex: none; width: 52px; padding: 9px 0; }
+.stepper button.action svg {
+  width: 20px; height: 20px; display: block; margin: 0 auto; fill: currentColor;
+}
+
+.row { display: flex; gap: 8px; }
+.row input[type="text"], .row select {
+  flex: 1; min-width: 0; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 14px;
+}
+.row input[type="text"]::placeholder { color: var(--text-faint); }
+.row input[type="text"]:focus, .row select:focus { outline: none; border-color: var(--accent); }
+
+ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; }
+li:hover { background: var(--bg-raised); }
+li .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+li .by { color: var(--text-faint); font-size: 12px; }
+li .dur { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+li img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex: none; background: var(--bg-raised); }
+
+.toggle { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
+.toggle input { accent-color: var(--accent); margin-top: 2px; flex: none; }
+`

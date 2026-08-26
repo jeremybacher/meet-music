@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet Music — options</title>
+    <style>
+      /* Sigue al navegador por defecto; `data-theme` en <html> lo fuerza si el usuario elige. */
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff; --panel: #f4f2f8; --text: #1c1830; --dim: #6b6486;
+        --border: #e0dced; --accent: #6a49f2; --accent-hover: #5a3ae0; --ok: #166534;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #0f0d17; --panel: #16131f; --text: #e8e6f0; --dim: #9c96b8;
+          --border: #262238; --accent: #7c5cff; --accent-hover: #6a49f2; --ok: #86efac;
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #0f0d17; --panel: #16131f; --text: #e8e6f0; --dim: #9c96b8;
+        --border: #262238; --accent: #7c5cff; --accent-hover: #6a49f2; --ok: #86efac;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; padding: 40px 24px; background: var(--bg); color: var(--text);
+        font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main { max-width: 560px; margin: 0 auto; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { color: var(--dim); margin: 0 0 28px; }
+      section { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px; }
+      h2 { font-size: 14px; margin: 0 0 6px; }
+      p { color: var(--dim); margin: 0 0 12px; font-size: 13px; }
+      label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+      input[type="text"], input[type="password"], select {
+        width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--panel); color: var(--text); font: inherit; font-size: 13px;
+      }
+      input:focus, select:focus { outline: none; border-color: var(--accent); }
+      button {
+        margin-top: 14px; font: inherit; font-weight: 600; padding: 9px 18px; border: 0;
+        border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer;
+      }
+      button:hover { background: var(--accent-hover); }
+      a { color: var(--accent); }
+      .saved { color: var(--ok); font-size: 13px; margin-left: 10px; opacity: 0; transition: opacity .2s; }
+      .saved[data-on="true"] { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <main id="root"></main>
+    <script src="options.js"></script>
+  </body>
+</html>

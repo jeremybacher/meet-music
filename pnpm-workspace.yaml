@@ -1,0 +1,4 @@
+# pnpm bloquea los scripts de instalación por defecto. esbuild necesita el suyo para enlazar su
+# binario nativo, así que se habilita ese y sólo ese.
+allowBuilds:
+  esbuild: true

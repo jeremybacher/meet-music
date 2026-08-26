@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # El zip de cada commit sirve para probar un cambio sin compilar nada localmente:
+      # se baja, se descomprime y se carga en chrome://extensions.
+      - name: Package the unpacked extension
+        run: cd dist && zip -r ../meet-music.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meet-music-unpacked
+          path: meet-music.zip
+          if-no-files-found: error
+          retention-days: 30
