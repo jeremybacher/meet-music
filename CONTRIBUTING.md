@@ -57,8 +57,11 @@ Four decisions worth knowing before touching the code:
 
 ## Style
 
-- Code comments are **in Spanish**, the maintainer's language. Everything a user sees is **in
-  English**. Pull requests in either language are welcome.
+- Code comments are **in Spanish**, the maintainer's language. **Everything else is in English**:
+  what a user sees, the documentation, and **commit messages, branch names and PR titles**.
+- Commits follow **Conventional Commits** — `feat:`, `fix:`, `docs:`, `chore:` — imperative mood and
+  lowercase subject. Branches carry the same prefix: `feat/shared-queue`, `fix/chat-draft`.
+- The conversation on an issue or a pull request can be in either language.
 - Patterns that look for things in Meet's DOM are **multilingual**: Meet renders in each user's own
   account language, not the extension's.
 - Comment the **why**, not the what. The comments that earn their keep are the ones explaining a
