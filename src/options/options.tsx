@@ -3,9 +3,12 @@ import { render } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { type ThemePref } from '../core/theme.js'
 
+const REPO = 'https://github.com/jeremybacher/meet-music'
+
 function Options() {
   const [theme, setTheme] = useState<ThemePref>('system')
   const [saved, setSaved] = useState(false)
+  const version = chrome.runtime.getManifest().version
 
   useEffect(() => {
     void chrome.storage.local.get('theme').then((stored) => {
@@ -47,6 +50,21 @@ function Options() {
 
       <button onClick={() => void save()}>Save</button>
       <span class="saved" data-on={String(saved)}>Saved</span>
+
+      <footer>
+        Meet Music {version} ·{' '}
+        <a href={REPO} target="_blank" rel="noreferrer">
+          Source
+        </a>{' '}
+        ·{' '}
+        <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">
+          MIT licence
+        </a>
+        <span class="disclaimer">
+          An independent project, not affiliated with or endorsed by Google. Google Meet and
+          YouTube are trademarks of Google LLC.
+        </span>
+      </footer>
     </>
   )
 }

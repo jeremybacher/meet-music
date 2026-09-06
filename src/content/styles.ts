@@ -281,6 +281,8 @@ li img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex:
 .settings { display: grid; gap: 14px; }
 .about { border-top: 1px solid var(--border); padding-top: 12px; font-size: 12px; color: var(--text-faint); }
 .about a { color: var(--accent); }
+/* El aviso legal: presente, legible, y sin pelearle el lugar a nada. */
+.disclaimer { display: block; margin-top: 6px; font-size: 11px; line-height: 1.5; }
 
 /* Botón cuadrado de sólo ícono dentro de una fila de formulario: el "+" de agregar. */
 button.action[data-icon="true"] { flex: none; width: 46px; padding: 0; }

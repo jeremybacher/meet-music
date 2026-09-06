@@ -16,6 +16,14 @@ import type { MicButtonBox } from './meet-controls.js'
 
 const BRAND = 'Meet Music'
 
+/**
+ * Va en el panel y en la página de opciones, con el mismo texto en los dos lados. El panel se
+ * dibuja adentro de Meet y se parece a Meet a propósito, que es justo lo que obliga a decirlo:
+ * quien lo ve por primera vez no tiene por qué saber que no es una función de Google.
+ */
+const UNAFFILIATED =
+  'An independent project, not affiliated with or endorsed by Google. Google Meet and YouTube are trademarks of Google LLC.'
+
 export function App() {
   const [inCall, setInCall] = useState(() => isCallUrl(location.href))
   const [session, setSession] = useState<Session | null>(null)
@@ -1085,7 +1093,16 @@ function Settings({ view, session }: { view: SessionView; session: Session }) {
         {BRAND} {version} ·{' '}
         <a href="https://github.com/jeremybacher/meet-music" target="_blank" rel="noreferrer">
           How it works
+        </a>{' '}
+        ·{' '}
+        <a
+          href="https://github.com/jeremybacher/meet-music/blob/main/LICENSE"
+          target="_blank"
+          rel="noreferrer"
+        >
+          MIT licence
         </a>
+        <span class="disclaimer">{UNAFFILIATED}</span>
       </div>
     </div>
   )

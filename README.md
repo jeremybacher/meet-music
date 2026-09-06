@@ -224,7 +224,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Copyright © 2026 Jeremy Bacher.
 
 Playing music in a meeting is the responsibility of whoever plays it. This extension neither
 redistributes nor stores audio: it only routes what YouTube is already playing in your own browser.
+
+**Not affiliated with Google.** Meet Music is an independent project, neither affiliated with,
+endorsed by nor sponsored by Google. Google Meet, YouTube and Google are trademarks of Google LLC,
+used here only to say what the extension works with. The panel is drawn to look at home inside Meet
+on purpose, so it says the same thing in its own settings.
