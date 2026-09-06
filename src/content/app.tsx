@@ -743,6 +743,19 @@ function Footer({ view, session }: { view: SessionView; session: Session }) {
   return (
     <div class="footer">
       <ChannelStatus view={view} />
+
+      {view.audio === 'on' && view.announce && (
+        <button
+          class="action"
+          data-quiet="true"
+          title="Writes one readable line in the Meet chat: what is playing and where to get Meet Music"
+          onClick={() => session.announceNow()}
+        >
+          <Icon path={CAMPAIGN} />
+          Tell the meeting what is playing
+        </button>
+      )}
+
       {playing && (
         <button
           class="action"
@@ -772,10 +785,12 @@ function ChannelStatus({ view }: { view: SessionView }) {
     )
   }
 
-  const { chat } = view
-  const detail = `chat ${chat.chatOpen ? 'open' : 'closed'} · send button ${
-    chat.sendButton ? 'found' : 'missing'
-  } · sent ${chat.sent} · received ${chat.received} · pending ${chat.pending}`
+  const { chat, participants } = view
+  const detail =
+    `chat ${chat.chatOpen ? 'open' : 'closed'} · send button ${chat.sendButton ? 'found' : 'missing'}` +
+    ` · sent ${chat.sent} · received ${chat.received} · pending ${chat.pending}` +
+    ` · participants ${participants.count ?? '?'} (${participants.source ?? 'unreadable'})` +
+    ` · announced ${view.announced}`
 
   if (!chat.chatOpen) {
     return (
@@ -916,6 +931,35 @@ function Queue({ view, session }: { view: SessionView; session: Session }) {
   )
 }
 
+/**
+ * Si el aviso automático está funcionando, y si no, por qué.
+ *
+ * Detectar que entró alguien depende de leer el contador de participantes del DOM de Meet, que no
+ * es una API y cambia sin avisar. Sin decir esto en algún lado, "no avisó" y "no encuentro el
+ * contador" se ven idénticos desde afuera — y el arreglo de cada uno es distinto.
+ */
+function AnnounceStatus({ view }: { view: SessionView }) {
+  const { count, source } = view.participants
+  const sent = view.announced === 1 ? '1 posted so far' : `${view.announced} posted so far`
+
+  if (count === null) {
+    return (
+      <div class="hint" data-tone="warn">
+        Right now the extension <strong>cannot tell how many people are in the call</strong>, so it
+        will not notice anyone joining — Meet's layout must have changed. Everything else keeps
+        working, and <em>Tell the meeting what is playing</em> at the bottom of the player posts the
+        line whenever you want.
+      </div>
+    )
+  }
+
+  return (
+    <div class="hint" title={`participants: ${count} · source: ${source}`}>
+      Reading {count} {count === 1 ? 'person' : 'people'} in the call, so joins are noticed · {sent}.
+    </div>
+  )
+}
+
 function Settings({ view, session }: { view: SessionView; session: Session }) {
   // El campo se maneja localmente: atado a `view.displayName` cualquier repintado lo devolvía al
   // valor guardado y borraba lo tipeado. La sesión se entera al soltar el foco.
@@ -987,18 +1031,14 @@ function Settings({ view, session }: { view: SessionView; session: Session }) {
             When someone joins while you are playing, the extension posts <strong>one readable
             line</strong> in the chat: the song, that you are sharing it, and where to get{' '}
             {BRAND}. It is the only message meant for people who do not have the extension —
-            without it, walking into music with no visible source is just confusing. At most one
-            every 90 seconds, and only while you are the one playing.
+            without it, walking into music with no visible source is just confusing. Meet's chat
+            hides everything sent before you arrived, so each arrival needs its own line; several
+            people arriving together share one, and there is never more than one every 30 seconds.
           </span>
         </span>
       </label>
 
-      {view.audio === 'on' && view.announce && (
-        <button class="action" onClick={() => session.announceNow()}>
-          <Icon path={CAMPAIGN} />
-          Post it in the chat now
-        </button>
-      )}
+      {view.announce && <AnnounceStatus view={view} />}
 
       <div class="about">
         {BRAND} {version} ·{' '}

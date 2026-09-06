@@ -24,7 +24,11 @@ import { onMain, toMain } from './bridge.js'
 import { parseVideoId } from '../youtube/parse-url.js'
 import { type ResolvedTheme, type ThemePref, resolveTheme, watchSystemTheme } from '../core/theme.js'
 import { announcementText } from '../core/announce.js'
-import { watchParticipants } from './meet-participants.js'
+import {
+  type ParticipantReading,
+  UNKNOWN,
+  watchParticipants,
+} from './meet-participants.js'
 import {
   type MicButtonBox,
   boxOf,
@@ -75,6 +79,14 @@ export interface SessionView {
   /** Avisar por el chat, en texto legible, a quien se suma con la música ya sonando. */
   announce: boolean
   /**
+   * Lo último que se pudo leer del roster de Meet, y cuántos avisos salieron.
+   *
+   * Está a la vista porque sin esto "no avisó" y "no encuentro el contador de Meet" se ven
+   * exactamente igual desde afuera, y son problemas distintos con arreglos distintos.
+   */
+  participants: ParticipantReading
+  announced: number
+  /**
    * Estamos buscando el título de un link recién pegado. Sin esto, pegar y apretar "+" no producía
    * ninguna señal hasta que oEmbed contestaba: parecía que no había pasado nada.
    */
@@ -100,14 +112,24 @@ const SNAPSHOT_QUEUE_MAX = 10
  * Cuánto se espera antes de avisar por el chat, para que varias entradas seguidas produzcan un solo
  * mensaje. Entrar de a poco a una reunión es lo normal al arrancar.
  */
-const JOIN_COALESCE_MS = 5_000
+const JOIN_COALESCE_MS = 6_000
 
 /**
- * Piso entre dos avisos. El chat es un canal caro —cada mensaje es una fila visible para todos— así
- * que se agrupa fuerte. Cuando alguien entra dentro de la ventana el aviso no se descarta: se
- * pospone hasta que la ventana termina, para que igual lo vea.
+ * Piso entre dos avisos.
+ *
+ * Acá hay una tensión real y el número sale de resolverla, no de elegir un valor redondo. El chat
+ * de Meet **no muestra lo anterior a que entraras**: un aviso mandado antes no existe para quien
+ * acaba de llegar, así que cada entrada necesita el suyo. Pero cada mensaje es también una fila
+ * visible para toda la reunión.
+ *
+ * Con un piso alto el aviso llega tarde y deja de cumplir su función —quien entró ya se preguntó de
+ * dónde salía la música— así que el piso es corto y lo que agrupa de verdad es la ventana de
+ * arriba. `ANNOUNCE_MAX` pone el techo para que una reunión rarísima no se llene igual.
  */
-const ANNOUNCE_GAP_MS = 90_000
+const ANNOUNCE_GAP_MS = 30_000
+
+/** Techo por sesión de música. Se reinicia al parar: otra música es otra conversación. */
+const ANNOUNCE_MAX = 12
 
 export class Session {
   private view: SessionView = {
@@ -134,6 +156,8 @@ export class Session {
     theme: resolveTheme('system'),
     shareQueue: true,
     announce: true,
+    participants: UNKNOWN,
+    announced: 0,
     resolving: false,
     outgoing: 0,
     authoritative: true,
@@ -177,7 +201,7 @@ export class Session {
           this.send({ type: 'monitor', level: this.view.levels.musicMonitor })
           toMain({ type: 'set-duck', duck: this.view.duck })
           // Ya está sonando para la reunión: es el momento honesto para contarlo en el chat.
-          this.requestAnnouncement(true)
+          this.requestAnnouncement('started')
           break
 
         case 'music-pending':
@@ -216,7 +240,15 @@ export class Session {
     if (this.view.shareQueue) void this.openChat()
 
     // Alguien nuevo en la llamada con la música ya sonando no tiene forma de saber de dónde sale.
-    watchParticipants(() => this.requestAnnouncement())
+    watchParticipants(
+      () => this.requestAnnouncement('joined'),
+      (reading) => {
+        const { participants } = this.view
+        if (reading.count !== participants.count || reading.source !== participants.source) {
+          this.patch({ participants: reading })
+        }
+      },
+    )
 
     // El campo del chat aparece y desaparece según el panel esté abierto; revisamos cada tanto.
     setInterval(() => {
@@ -277,15 +309,26 @@ export class Session {
    * Es lo contrario de un throttle común, y es a propósito — el pedido viene de una persona que
    * está mirando la reunión sin entender de dónde sale la música.
    */
-  private requestAnnouncement(justStarted = false): void {
-    if (!this.canAnnounce() || this.announceTimer !== null) return
-    // Reenganchar el audio no es empezar de nuevo. Sin esto, cada corte y vuelta del enlace
-    // producía otro aviso en el chat sin que hubiera entrado nadie.
-    if (justStarted && this.lastAnnounceAt !== 0) return
+  private requestAnnouncement(reason: 'started' | 'joined' | 'manual'): void {
+    if (!this.canAnnounce()) return
 
-    const since = Date.now() - this.lastAnnounceAt
+    if (reason === 'manual') {
+      // Pedido a mano: manda sobre la ventana, el techo y cualquier aviso ya programado.
+      if (this.announceTimer !== null) clearTimeout(this.announceTimer)
+      this.announceTimer = null
+    } else {
+      if (this.announceTimer !== null) return
+      // Reenganchar el audio no es empezar de nuevo. Sin esto, cada corte y vuelta del enlace
+      // producía otro aviso en el chat sin que hubiera entrado nadie.
+      if (reason === 'started' && this.lastAnnounceAt !== 0) return
+      if (this.view.announced >= ANNOUNCE_MAX) return
+    }
+
     const first = this.lastAnnounceAt === 0
-    const wait = justStarted && first ? 0 : Math.max(JOIN_COALESCE_MS, ANNOUNCE_GAP_MS - since)
+    const immediate = reason === 'manual' || (reason === 'started' && first)
+    const wait = immediate
+      ? 0
+      : Math.max(JOIN_COALESCE_MS, ANNOUNCE_GAP_MS - (Date.now() - this.lastAnnounceAt))
 
     this.announceTimer = setTimeout(() => {
       this.announceTimer = null
@@ -294,7 +337,9 @@ export class Session {
         title: this.view.state.current?.title ?? null,
         host: this.view.displayName,
       })
-      if (this.chat.sendPlain(text)) this.lastAnnounceAt = Date.now()
+      if (!this.chat.sendPlain(text)) return
+      this.lastAnnounceAt = Date.now()
+      this.patch({ announced: this.view.announced + 1 })
     }, wait)
   }
 
@@ -388,6 +433,7 @@ export class Session {
     this.announceTimer = null
     // La próxima sesión de música vuelve a merecer su aviso: es otra cosa la que suena.
     this.lastAnnounceAt = 0
+    this.patch({ announced: 0 })
     this.adActive = false
 
     const mic = this.view.voiceMuted ? this.preMuteMic : this.view.levels.mic
@@ -581,13 +627,20 @@ export class Session {
     void this.savePrefs()
   }
 
-  /** Contarlo ahora, sin esperar a que entre nadie. */
+  /**
+   * Contarlo ahora, sin esperar a que entre nadie.
+   *
+   * Es la salida cuando la lectura del roster no funciona: el DOM de Meet no es una API y puede
+   * dejar de dejarse leer en cualquier momento, así que tiene que haber una forma de hacerlo a mano
+   * que no dependa de nada de eso.
+   */
   announceNow(): void {
-    this.lastAnnounceAt = 0
-    if (this.announceTimer !== null) clearTimeout(this.announceTimer)
-    this.announceTimer = null
-    this.requestAnnouncement(true)
-    this.notice('Posted in the chat what is playing.')
+    this.requestAnnouncement('manual')
+    this.notice(
+      this.view.audio === 'on'
+        ? 'Posting in the chat what is playing…'
+        : 'Nothing is playing from here, so there is nothing to announce.',
+    )
   }
 
   /** Saltar a un punto de la canción, desde el propio Meet. */

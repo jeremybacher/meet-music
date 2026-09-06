@@ -39,8 +39,10 @@ If you touched audio or the transport, check at least this:
 6. *Mute my voice* silences you while the music keeps playing for everyone else.
 7. Adding a song from the second account shows up in the first account's queue.
 8. The second account sees the queue **as soon as it joins**, without opening the chat by hand.
-9. The chat gets exactly **one** readable announcement per join, not one per participant, and none
-   at all when nobody joins.
+9. The chat gets exactly **one** readable announcement per join — within a few seconds, not a
+   minute later — and none at all when nobody joins. Open ⚙: it says how many people the extension
+   is reading in the call. If it says it cannot tell, the join detection is broken and everything
+   below it is guesswork.
 10. Share a tab with audio while music is playing: the shared tab's sound still reaches the meeting.
 11. Start the music with your microphone off in Meet: the badge says *Not on air*, and turning the
     mic on brings the music in without pressing anything again.

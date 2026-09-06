@@ -66,8 +66,13 @@ When someone joins while you are playing, the extension writes **one readable li
 
 It is the only message aimed at people who **do not** have the extension. Without it, walking into a
 meeting where music is already playing is walking into a sound with no visible source and no way to
-join in. At most one every 90 seconds, only while you are the one playing, and switchable in
-⚙ → *Tell the meeting what is playing*.
+join in.
+
+Meet's chat shows nothing sent before you arrived, so each arrival gets its own line: people
+arriving together share one, and there is never more than one every 30 seconds. It only comes from
+whoever is playing, and you can turn it off in ⚙. If Meet's layout changes and the extension can no
+longer tell how many people are in the call, ⚙ says so plainly and
+*Tell the meeting what is playing*, at the bottom of the player, posts the line by hand.
 
 ### Shared queue
 
