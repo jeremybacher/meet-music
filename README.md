@@ -45,11 +45,34 @@ outside a call.
 3. **Set the volume.** Whoever is playing gets three independent knobs — music in the meeting, music
    just for them, and their own voice. Everyone else gets up and down buttons, which change the
    volume for the whole meeting.
-4. **Mute my voice** silences you without cutting the music. Meet's own mute button cannot do that,
-   because music and voice travel as a single mixed track.
+4. **The mic button silences you without cutting the music.** While you are playing, Meet Music
+   takes over Meet's own microphone button — same place, same look — because Meet's would cut the
+   music too, and two mic buttons side by side is a worse answer than one that does the right
+   thing. It hands the button back the moment the music stops, or if you mute yourself in Meet
+   (only Meet's own button can give the microphone back).
+
+Anyone can jump straight to a queued song with the ▶ next to it, and remove one with ✕. Both are
+requests that apply to the whole meeting.
 
 **Use headphones.** Through speakers your microphone picks the music back up and the meeting hears it
 twice, slightly out of sync.
+
+### Telling the meeting
+
+When someone joins while you are playing, the extension writes **one readable line** in the chat:
+
+> ♪ Meet Music · now playing "…" · Ana is sharing it through their microphone, so you hear it
+> without installing anything. Add songs to the queue with the extension: …
+
+It is the only message aimed at people who **do not** have the extension. Without it, walking into a
+meeting where music is already playing is walking into a sound with no visible source and no way to
+join in.
+
+Meet's chat shows nothing sent before you arrived, so each arrival gets its own line: people
+arriving together share one, and there is never more than one every 30 seconds. It only comes from
+whoever is playing, and you can turn it off in ⚙. If Meet's layout changes and the extension can no
+longer tell how many people are in the call, ⚙ says so plainly and
+*Tell the meeting what is playing*, at the bottom of the player, posts the line by hand.
 
 ### Shared queue
 
@@ -76,14 +99,16 @@ None of these are bugs — they follow from injecting audio into the microphone.
 - **Music sounds worse than the original.** Meet encodes the microphone track for speech. That is the
   price of nobody else having to install anything.
 - **Muting yourself with Meet's button also cuts the music**, because it is a single track. That is
-  what *Mute my voice* is for.
+  why the extension takes that button over while you are playing. If Meet's controls move somewhere
+  the extension cannot find, the button falls back to its own spot next to the panel launcher.
 - **Volume cannot be per-person.** Listeners get the music fused with the player's voice; turning it
   down would turn their voice down too.
 - **YouTube ads.** Without Premium they play into the meeting. The extension detects them and lowers
   the volume while they last.
 - **Spotify is not possible** in this model: it plays under DRM, and protected audio cannot be
   captured.
-- **People without the extension see odd text in the chat** while the queue is shared.
+- **People without the extension see odd text in the chat** while the queue is shared. The one
+  message meant for them — the announcement above — is deliberately readable.
 - **If the player closes their tab without stopping**, everyone else keeps seeing them as the DJ until
   someone uses *Stop and clear queue*.
 - **Meet's DOM changes without notice.** If the chat transport breaks, the extension degrades to
@@ -125,8 +150,13 @@ extension (toolbar icon, shortcut, context menu), and a background player tab ne
 Two deliberate decisions about the voice:
 
 - **While there is no music, the extension touches nothing.** `getUserMedia` returns the microphone
-  untouched and no `AudioContext` is even created. When music starts, the mixer is built and the
-  track is swapped live with `RTCRtpSender.replaceTrack()`.
+  untouched, no `AudioContext` is created and not a single timer runs. When music starts, the mixer
+  is built and the track is swapped live with `RTCRtpSender.replaceTrack()`.
+- **While there is music, every outgoing audio sender is kept on the mix.** Swapping once is not
+  enough: when someone joins, Meet renegotiates — sometimes on a brand-new `RTCPeerConnection` — with
+  the raw microphone track. So `addTrack`, `addTransceiver` and `replaceTrack` are all intercepted,
+  and a reconciler re-checks every sender each second while music plays. Screen-share audio is
+  tracked separately and never touched.
 - **The voice passes through no processing node**, only a gain. The limiter hangs off the music
   branch. A test verifies that topology.
 
@@ -153,7 +183,7 @@ purpose: if identity were the name, two people on the default name would count a
 
 ```bash
 pnpm dev        # esbuild in watch mode
-pnpm test       # 61 tests
+pnpm test       # 93 tests
 pnpm typecheck
 pnpm build
 ```
@@ -172,6 +202,9 @@ by hand**, with two Google accounts in a real meeting.
 | `src/core/mixer.ts` | The Web Audio graph. Guarantees the music cannot touch the voice. |
 | `src/content/session.ts` | Panel state, roles, wiring. |
 | `src/content/chat-transport.ts` | Shared queue over the Meet chat, without clobbering your drafts. |
+| `src/content/meet-participants.ts` | Reads how many people are in the call, to notice someone joining. |
+| `src/content/meet-controls.ts` | Meet's mic button: its state, and where it is so ours can take its place. |
+| `src/core/announce.ts` | The one plain-text chat line, written for people without the extension. |
 | `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
 | `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |
 | `src/background/service-worker.ts` | YouTube tab and signalling relay. |
@@ -191,7 +224,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Copyright © 2026 Jeremy Bacher.
 
 Playing music in a meeting is the responsibility of whoever plays it. This extension neither
 redistributes nor stores audio: it only routes what YouTube is already playing in your own browser.
+
+**Not affiliated with Google.** Meet Music is an independent project, neither affiliated with,
+endorsed by nor sponsored by Google. Google Meet, YouTube and Google are trademarks of Google LLC,
+used here only to say what the extension works with. The panel is drawn to look at home inside Meet
+on purpose, so it says the same thing in its own settings.

@@ -23,6 +23,19 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+      # Las dos versiones se bumpean a mano y son dos archivos distintos, así que se
+      # desincronizan solas. Se nota recién al etiquetar, cuando el release falla y hay que
+      # borrar la etiqueta: mejor que se note acá.
+      - name: Check the manifest and the package agree on the version
+        run: |
+          manifest=$(node -p "require('./dist/manifest.json').version")
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$manifest" != "$pkg" ]; then
+            echo "::error::manifest.json is $manifest and package.json is $pkg — bump both"
+            exit 1
+          fi
+          echo "version $manifest"
+
       # El zip de cada commit sirve para probar un cambio sin compilar nada localmente:
       # se baja, se descomprime y se carga en chrome://extensions.
       - name: Package the unpacked extension

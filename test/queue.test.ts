@@ -85,3 +85,35 @@ describe('reinicio', () => {
   })
 
 })
+
+describe('adelantar una canción', () => {
+  const base = [
+    { type: 'add', track: track('a') },
+    { type: 'add', track: track('b') },
+    { type: 'add', track: track('c') },
+  ] as const
+
+  const seeded = () => base.reduce((state, action) => reduce(state, action), emptyState())
+
+  it('la pone a sonar sin pasar por las de antes', () => {
+    const s = reduce(seeded(), { type: 'jump', id: 'c' })
+    expect(s.current?.id).toBe('c')
+    expect(s.playing).toBe(true)
+  })
+
+  /** Perder canciones ajenas por adelantar la propia sería la peor forma de compartir una cola. */
+  it('las salteadas quedan en la cola, no se descartan', () => {
+    const s = reduce(seeded(), { type: 'jump', id: 'c' })
+    expect(s.queue.map((t) => t.id)).toEqual(['b'])
+  })
+
+  it('un id que ya no está no cambia nada', () => {
+    const before = seeded()
+    expect(reduce(before, { type: 'jump', id: 'zzz' })).toBe(before)
+  })
+
+  it('adelantar la que ya suena no la duplica ni la pierde', () => {
+    const before = seeded()
+    expect(reduce(before, { type: 'jump', id: 'a' })).toBe(before)
+  })
+})

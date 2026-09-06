@@ -1,0 +1,79 @@
+name: Security
+
+# Dos preguntas distintas: si lo que tenemos instalado tiene agujeros conocidos, y si el código
+# propio cae en un patrón peligroso.
+#
+# Corre además sola los lunes, y ese es el disparador que hace el trabajo de verdad: `push` y
+# `pull_request` sólo contestan "¿lo que acabo de escribir trae algo malo?", pero los avisos se
+# publican después. Un lockfile limpio deja de estarlo sin que nadie toque el repositorio, y sin
+# la corrida semanal eso no se entera nadie hasta el próximo commit, sea cuando sea. Ojo con dos
+# detalles del cron: sólo corre en la rama por defecto, y GitHub lo desactiva tras 60 días sin
+# actividad en el repositorio.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Lo que viaja adentro del zip que la gente instala y corre en su navegador, dentro de
+      # su reunión. Hoy es una sola dependencia, así que el umbral puede ser bajo: cualquier
+      # aviso acá merece leerse antes de publicar.
+      - name: Audit what ships
+        run: pnpm audit --prod --audit-level moderate --ignore-registry-errors
+
+      # esbuild, tsc y vitest no llegan al navegador de nadie. Importan igual —compilan el
+      # zip que se firma— pero el umbral es el de lo grave, para que un aviso menor en una
+      # dependencia de test no frene un fix.
+      - name: Audit the build and test tooling
+        run: pnpm audit --dev --audit-level high --ignore-registry-errors
+
+  # Falta acá un job de `actions/dependency-review-action`, que en un PR compara contra main y
+  # frena la dependencia vulnerable —o con una licencia nueva, que el audit no mira— antes de
+  # que entre. Necesita el Dependency graph encendido en Settings → Code security, y no se
+  # puede encender por API. Mientras esté apagado el job sólo puede fallar, así que no está:
+  # con el switch puesto son diez líneas.
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin paso de build a propósito: CodeQL lee el fuente en TypeScript. Analizar el bundle
+      # de esbuild sería analizar código minificado y con preact adentro, que es ruido.
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # La extensión inyecta en el DOM de Meet, parsea lo que llega por el chat y maneja
+          # claves: las consultas extendidas cubren justo eso (XSS por DOM, expresiones
+          # regulares que se pueden hacer explotar, criptografía mal usada).
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

@@ -29,12 +29,23 @@ export interface ChatDiagnostics {
 const RETRY_MS = 1200
 /** Cuántos mensajes se acumulan esperando. Más que esto es una sesión anómala. */
 const OUTBOX_MAX = 20
+/** Cada cuánto se puede reintentar abrir el panel de chat por nuestra cuenta. */
+const OPEN_RETRY_MS = 10_000
 
 /** Mensajes de los que sólo vale el último; encolar los intermedios no aporta nada. */
 const LATEST_WINS = new Set<Msg['op']>(['volume', 'playback', 'state'])
 
 /** Tope de payloads recordados para deduplicar. */
 const SEEN_MAX = 2000
+
+/**
+ * Lo que sale por el chat, de dos clases muy distintas.
+ *
+ * `msg` es la cola compartida: cifrada, oculta, y sólo la entiende otra instalación de la
+ * extensión. `text` es un aviso escrito para personas: va en claro y queda a la vista, porque su
+ * destinatario es precisamente quien no tiene la extensión.
+ */
+type Outgoing = { kind: 'msg'; msg: Msg } | { kind: 'text'; text: string }
 
 export class ChatTransport {
   private observer: MutationObserver | null = null
@@ -49,7 +60,7 @@ export class ChatTransport {
    */
   private enabled = false
 
-  private outbox: Msg[] = []
+  private outbox: Outgoing[] = []
   private flushing = false
   /** Envíos fallidos seguidos. Sirve para avisar en vez de reintentar en silencio para siempre. */
   private failures = 0
@@ -206,27 +217,53 @@ export class ChatTransport {
   }
 
   /**
-   * Encola el mensaje. Devuelve false si el chat no está disponible, para que el panel avise en vez
-   * de fallar mudo. El envío en sí es diferido: ver `flush`.
+   * Encola un mensaje de la cola compartida. Devuelve false sólo si compartir está apagado o
+   * todavía no hay clave — no si el chat está cerrado.
+   *
+   * Que el panel de chat esté abierto **no** es condición para encolar: abrirlo es trabajo de
+   * `flush`, y exigirlo acá tiraba silenciosamente el primer mensaje de cada sesión, que es
+   * justamente el `hello` con el que quien llega pide el estado. El síntoma era entrar a una
+   * reunión con música y ver una sala vacía.
    */
   send(msg: Msg): boolean {
-    if (!this.canSend()) return false
+    if (!this.enabled || !this.key) return false
 
     // Para estos mensajes sólo importa el último valor: si hay uno esperando, se reemplaza en vez
     // de encolar otro. Mover un slider no debe dejar una fila de mensajes obsoletos en el chat.
     if (LATEST_WINS.has(msg.op)) {
-      const pending = this.outbox.findIndex((m) => m.op === msg.op)
+      const pending = this.outbox.findIndex((o) => o.kind === 'msg' && o.msg.op === msg.op)
       if (pending !== -1) {
-        this.outbox[pending] = msg
+        this.outbox[pending] = { kind: 'msg', msg }
         this.flush()
         return true
       }
     }
 
-    if (this.outbox.length >= OUTBOX_MAX) this.outbox.shift()
-    this.outbox.push(msg)
-    this.flush()
+    this.enqueue({ kind: 'msg', msg })
     return true
+  }
+
+  /**
+   * Encola un aviso legible para toda la reunión. No se cifra ni se oculta: existe para quien no
+   * tiene la extensión. No depende de que compartir la cola esté activado, porque el caso que
+   * justifica el aviso —nadie más tiene la extensión— es exactamente ese.
+   */
+  sendPlain(text: string): boolean {
+    const line = text.replace(/\s+/g, ' ').trim()
+    if (!line) return false
+    this.enqueue({ kind: 'text', text: line })
+    return true
+  }
+
+  private enqueue(item: Outgoing): void {
+    if (this.outbox.length >= OUTBOX_MAX) this.outbox.shift()
+    this.outbox.push(item)
+    this.flush()
+  }
+
+  /** Un mensaje cifrado necesita clave y permiso; uno en claro, nada. */
+  private ready(item: Outgoing): boolean {
+    return item.kind === 'text' || (this.enabled && this.key !== null)
   }
 
   /**
@@ -238,7 +275,9 @@ export class ChatTransport {
    */
   private flush(): void {
     if (this.flushing || this.outbox.length === 0) return
-    if (!this.enabled || !this.key) return
+
+    const item = this.outbox.find((o) => this.ready(o))
+    if (!item) return
 
     const input = findChatInput()
     if (!input) {
@@ -254,16 +293,17 @@ export class ChatTransport {
     }
 
     this.flushing = true
-    const msg = this.outbox[0]
 
-    void sealMsg(this.key, msg)
+    void this.wireFor(item)
       .then(async (wire) => {
+        if (wire === null) return
         // Revalidamos: entre el cifrado y ahora pudiste haber empezado a escribir.
         const target = findChatInput()
         if (!target || isComposing(target)) return
 
         if (await submit(target, wire)) {
-          this.outbox.shift()
+          const at = this.outbox.indexOf(item)
+          if (at !== -1) this.outbox.splice(at, 1)
           this.sent++
           this.failures = 0
         } else {
@@ -277,9 +317,14 @@ export class ChatTransport {
       })
   }
 
+  private async wireFor(item: Outgoing): Promise<string | null> {
+    if (item.kind === 'text') return item.text
+    return this.key ? sealMsg(this.key, item.msg) : null
+  }
+
   private tryOpenChat(): void {
     const now = Date.now()
-    if (now - this.lastOpenAttempt < 30_000) return
+    if (now - this.lastOpenAttempt < OPEN_RETRY_MS) return
     this.lastOpenAttempt = now
     void this.ensureChatOpen()
   }

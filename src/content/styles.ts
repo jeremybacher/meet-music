@@ -100,11 +100,26 @@ export const PANEL_CSS = `
 .launcher[data-muted="true"] { background: #ea4335; color: #ffffff; }
 .launcher[data-muted="true"]:hover { background: #d33426; }
 
+/*
+ * El botón que ocupa el lugar del de micrófono de Meet. La geometría y los colores llegan inline,
+ * medidos del botón que tapa: es la única forma de que coincida con el tema de Meet, que no tiene
+ * por qué ser el que el usuario eligió para el panel.
+ *
+ * Sin sombra: los botones de la barra de Meet no la tienen, y una lo delataría como pegado encima.
+ * El ícono va en proporción, no en píxeles fijos, porque esa barra se achica con la ventana.
+ */
+.launcher[data-overlay="true"] {
+  position: fixed; z-index: 2147483000; box-shadow: none;
+}
+.launcher[data-overlay="true"] svg { width: 50%; height: 50%; }
+
 /* Punto de "sonando", como el indicador de actividad de los controles de Meet. */
 .launcher .dot {
   position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%;
   background: #34a853; border: 2px solid var(--launcher-bg);
 }
+/* Suena en la reunión pero la pone otra persona: es información distinta, y merece otro color. */
+.launcher .dot[data-tone="remote"] { background: var(--accent); }
 
 /* Meet redondea sus paneles laterales a 16px y los apoya con una sombra suave, sin borde duro. */
 .panel {
@@ -121,6 +136,8 @@ header h2 { margin: 0; font-size: 16px; font-weight: 400; flex: 1; letter-spacin
   background: var(--bg-raised); color: var(--text-dim);
 }
 .badge[data-tone="live"] { background: var(--live); color: var(--live-text); }
+/* Listo pero sin salir al aire: no es un error, pero tampoco puede parecer que todo está bien. */
+.badge[data-tone="warn"] { background: var(--warn-bg); color: var(--warn-text); }
 
 /* Botones de ícono redondos con área táctil, como los de la cabecera de los paneles de Meet. */
 .icon-btn {
@@ -133,11 +150,28 @@ header h2 { margin: 0; font-size: 16px; font-weight: 400; flex: 1; letter-spacin
 
 .body { overflow-y: auto; padding: 4px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
 
+/* Contenedor de avisos. Vacío no ocupa nada: sin esto dejaba el hueco del gap del cuerpo. */
+.banners { display: grid; gap: 10px; }
+.banners:empty { display: none; }
+
 .banner { padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
 .banner[data-tone="warn"] { background: var(--warn-bg); color: var(--warn-text); }
 .banner[data-tone="error"] { background: var(--error-bg); color: var(--error-text); }
 .banner[data-tone="info"] { background: var(--info-bg); color: var(--info-text); }
 .banner button { margin-top: 10px; display: block; }
+/* Dentro de un banner los controles van en la paleta del banner, no en la del panel: el azul de
+   acento sobre el rojo de error se lee como dos cosas que no tienen nada que ver. */
+.banner .hint { color: inherit; opacity: .78; }
+.banner button.action { color: inherit; border-color: currentColor; }
+.banner button.action:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+/* El recomendado se levanta sobre la superficie del panel: contrasta contra cualquiera de los
+   tres fondos de banner sin necesidad de un color propio por tono. */
+.banner button.action[data-primary="true"] {
+  background: var(--bg); color: var(--text); border-color: transparent;
+}
+.banner button.action[data-primary="true"]:hover:not(:disabled) { background: var(--bg-raised); }
+/* Un .controls anidado ya trae su propio margen desde arriba. */
+.banner .controls button { margin-top: 0; }
 
 .now { display: flex; gap: 12px; align-items: center; }
 .now img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--bg-raised); flex: none; }
@@ -181,8 +215,9 @@ button.action[data-primary="true"]:hover:not(:disabled) { background: var(--acce
 .slider-head { display: flex; justify-content: space-between; font-size: 13px; }
 .slider-head span:last-child { color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .slider input { width: 100%; accent-color: var(--accent); }
-.slider[data-ducking="true"] .slider-head span:last-child::after { content: " · bajando"; color: var(--warn-text); }
+.slider[data-ducking="true"] .slider-head span:last-child::after { content: " · ducking"; color: var(--warn-text); }
 .hint { color: var(--text-faint); font-size: 12px; line-height: 1.5; }
+.hint[data-tone="warn"] { color: var(--warn-text); }
 
 /* Volumen compartido: pasos discretos, no un slider. Cada toque es un pedido, no un ajuste fino. */
 .stepper { display: flex; align-items: center; gap: 10px; }
@@ -195,6 +230,8 @@ button.action[data-primary="true"]:hover:not(:disabled) { background: var(--acce
   width: 20px; height: 20px; display: block; margin: 0 auto; fill: currentColor;
 }
 
+/* El formulario de agregar: la fila, y debajo el error del campo cuando lo hay. */
+.add { display: grid; gap: 6px; }
 .row { display: flex; gap: 8px; }
 .row input[type="text"], .row select {
   flex: 1; min-width: 0; padding: 10px 14px; border-radius: 8px;
@@ -202,6 +239,20 @@ button.action[data-primary="true"]:hover:not(:disabled) { background: var(--acce
 }
 .row input[type="text"]::placeholder { color: var(--text-faint); }
 .row input[type="text"]:focus, .row select:focus { outline: none; border-color: var(--accent); }
+
+/*
+ * Campo con un valor que no sirve. El borde queda rojo incluso con el foco puesto: mientras no se
+ * corrija, sigue estando mal, y devolverlo al azul al enfocarlo diría lo contrario justo cuando la
+ * persona vuelve a mirarlo.
+ */
+.row input[type="text"][data-invalid="true"],
+.row input[type="text"][data-invalid="true"]:focus { border-color: var(--error-text); }
+
+/*
+ * El motivo, pegado al campo. No es un banner: un error de formulario que aparece lejos del control
+ * que lo produjo obliga a buscarlo, y encima se iba solo a los cuatro segundos.
+ */
+.field-error { color: var(--error-text); font-size: 12px; line-height: 1.45; }
 
 ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; }
@@ -213,4 +264,52 @@ li img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex:
 
 .toggle { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
 .toggle input { accent-color: var(--accent); margin-top: 2px; flex: none; }
+
+/* Estado inicial: lo único que hay que entender antes de pegar el primer link. */
+.stage { display: grid; gap: 6px; }
+.stage-title { font-size: 15px; font-weight: 500; }
+
+/*
+ * Grupo de controles apoyado sobre una superficie hundida. Separa "las perillas" del resto sin
+ * un borde duro, que es como Meet agrupa dentro de sus propios paneles.
+ */
+.group { background: var(--bg-sunken); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+
+/* El pie: estado del canal y la salida. Separado por una línea porque no es parte del flujo. */
+.footer { border-top: 1px solid var(--border); padding-top: 12px; display: grid; gap: 10px; }
+
+.settings { display: grid; gap: 14px; }
+.about { border-top: 1px solid var(--border); padding-top: 12px; font-size: 12px; color: var(--text-faint); }
+.about a { color: var(--accent); }
+/* El aviso legal: presente, legible, y sin pelearle el lugar a nada. */
+.disclaimer { display: block; margin-top: 6px; font-size: 11px; line-height: 1.5; }
+
+/* Botón cuadrado de sólo ícono dentro de una fila de formulario: el "+" de agregar. */
+button.action[data-icon="true"] { flex: none; width: 46px; padding: 0; }
+button.action[data-icon="true"] svg { width: 22px; height: 22px; display: block; margin: 0 auto; fill: currentColor; }
+
+/*
+ * Acción destructiva y de baja frecuencia. Sin borde ni acento: tiene que ser encontrable, no
+ * llamativa — la aprieta cualquiera y corta la música de toda la reunión.
+ */
+button.action[data-quiet="true"] { border-color: transparent; color: var(--text-dim); font-weight: 400; }
+button.action[data-quiet="true"]:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+
+/* Los botones de cada fila de la cola: más chicos que los de cabecera, la fila mide 32px. */
+li .icon-btn { width: 32px; height: 32px; flex: none; }
+li .icon-btn svg { width: 18px; height: 18px; display: block; fill: currentColor; }
+
+/*
+ * Un link pegado tarda en resolver su título. Es el único giro de la interfaz, y está porque el
+ * silencio de ese segundo se lee como que la extensión no anduvo.
+ */
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: none;
+  border: 2px solid currentColor; border-right-color: transparent;
+  vertical-align: -3px; margin-right: 6px;
+  animation: mm-spin .7s linear infinite;
+}
+button.action[data-icon="true"] .spinner { margin: 0 auto; }
+@keyframes mm-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 `

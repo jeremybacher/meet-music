@@ -21,10 +21,31 @@ import { deriveKey } from '../core/crypto.js'
 import { meetingCode } from './meet-url.js'
 import { detectDisplayName } from './meet-identity.js'
 import { onMain, toMain } from './bridge.js'
-import { parseVideoId } from '../youtube/parse-url.js'
+import { type LinkProblem, parseLink } from '../youtube/parse-url.js'
 import { type ResolvedTheme, type ThemePref, resolveTheme, watchSystemTheme } from '../core/theme.js'
+import { announcementText } from '../core/announce.js'
+import {
+  type ParticipantReading,
+  UNKNOWN,
+  watchParticipants,
+} from './meet-participants.js'
+import {
+  type MicButtonBox,
+  boxOf,
+  findMicButton,
+  isMutedLabel,
+  sameBox,
+} from './meet-controls.js'
 
-export type AudioStatus = 'off' | 'starting' | 'on' | 'error'
+/**
+ * `waiting` es el estado que faltaba: el grafo está armado y la música suena para vos, pero Meet
+ * todavía no transmite tu audio, así que la reunión no escucha nada. No es un error —se arregla
+ * solo— pero callarlo dejaba al DJ creyendo que estaba al aire.
+ */
+export type AudioStatus = 'off' | 'starting' | 'waiting' | 'on' | 'error'
+
+/** Lo que devuelve `submit`, para que el campo pueda marcarse a sí mismo. */
+export type SubmitResult = { ok: true } | { ok: false; problem: LinkProblem }
 
 export interface SessionView {
   audio: AudioStatus
@@ -40,6 +61,11 @@ export interface SessionView {
   ducking: boolean
   /** El micrófono silenciado desde Meet: corta todo, música incluida. */
   micMuted: boolean
+  /**
+   * Dónde está el botón de micrófono de Meet, para poder ocupar su lugar mientras suena música.
+   * `null` cuando no se lo encuentra o no está a la vista: ahí el nuestro vuelve al dock.
+   */
+  micButton: MicButtonBox | null
   /** Tu voz silenciada desde acá: la música sigue sonando para la reunión. */
   voiceMuted: boolean
   canBroadcast: boolean
@@ -53,6 +79,23 @@ export interface SessionView {
   themePref: ThemePref
   theme: ResolvedTheme
   shareQueue: boolean
+  /** Avisar por el chat, en texto legible, a quien se suma con la música ya sonando. */
+  announce: boolean
+  /**
+   * Lo último que se pudo leer del roster de Meet, y cuántos avisos salieron.
+   *
+   * Está a la vista porque sin esto "no avisó" y "no encuentro el contador de Meet" se ven
+   * exactamente igual desde afuera, y son problemas distintos con arreglos distintos.
+   */
+  participants: ParticipantReading
+  announced: number
+  /**
+   * Estamos buscando el título de un link recién pegado. Sin esto, pegar y apretar "+" no producía
+   * ninguna señal hasta que oEmbed contestaba: parecía que no había pasado nada.
+   */
+  resolving: boolean
+  /** Cuántos emisores de Meet llevan la mezcla. Con música puesta, 0 significa que nadie la oye. */
+  outgoing: number
   /** Derivado: si mandás vos (sos el DJ, o todavía no hay ninguno). */
   authoritative: boolean
 }
@@ -68,6 +111,29 @@ const AD_DUCK = 0.1
  */
 const SNAPSHOT_QUEUE_MAX = 10
 
+/**
+ * Cuánto se espera antes de avisar por el chat, para que varias entradas seguidas produzcan un solo
+ * mensaje. Entrar de a poco a una reunión es lo normal al arrancar.
+ */
+const JOIN_COALESCE_MS = 6_000
+
+/**
+ * Piso entre dos avisos.
+ *
+ * Acá hay una tensión real y el número sale de resolverla, no de elegir un valor redondo. El chat
+ * de Meet **no muestra lo anterior a que entraras**: un aviso mandado antes no existe para quien
+ * acaba de llegar, así que cada entrada necesita el suyo. Pero cada mensaje es también una fila
+ * visible para toda la reunión.
+ *
+ * Con un piso alto el aviso llega tarde y deja de cumplir su función —quien entró ya se preguntó de
+ * dónde salía la música— así que el piso es corto y lo que agrupa de verdad es la ventana de
+ * arriba. `ANNOUNCE_MAX` pone el techo para que una reunión rarísima no se llene igual.
+ */
+const ANNOUNCE_GAP_MS = 30_000
+
+/** Techo por sesión de música. Se reinicia al parar: otra música es otra conversación. */
+const ANNOUNCE_MAX = 12
+
 export class Session {
   private view: SessionView = {
     audio: 'off',
@@ -82,6 +148,7 @@ export class Session {
     duck: { ...DEFAULT_DUCK },
     ducking: false,
     micMuted: false,
+    micButton: null,
     voiceMuted: false,
     canBroadcast: false,
     chatStuck: false,
@@ -91,6 +158,11 @@ export class Session {
     themePref: 'system',
     theme: resolveTheme('system'),
     shareQueue: true,
+    announce: true,
+    participants: UNKNOWN,
+    announced: 0,
+    resolving: false,
+    outgoing: 0,
     authoritative: true,
   }
 
@@ -108,6 +180,13 @@ export class Session {
   private preMuteMic = 1
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   private volumeTimer: ReturnType<typeof setTimeout> | null = null
+  /** Aviso por el chat pendiente de salir, y cuándo salió el último. Ver `requestAnnouncement`. */
+  private announceTimer: ReturnType<typeof setTimeout> | null = null
+  private lastAnnounceAt = 0
+  /** Reintentos del `hello` inicial mientras el chat de Meet todavía no está disponible. */
+  private helloTimer: ReturnType<typeof setTimeout> | null = null
+  /** El botón de micrófono de Meet, cacheado: buscarlo entre todos los botones cuesta. */
+  private micEl: HTMLElement | null = null
 
   async start(): Promise<void> {
     await this.loadPeerId()
@@ -120,11 +199,21 @@ export class Session {
           this.send({ type: 'signal', signal: msg.signal })
           break
         case 'music-attached':
-          this.patch({ audio: 'on', error: null, needsGesture: false })
+          this.patch({ audio: 'on', error: null, notice: null, needsGesture: false })
           this.pushLevels()
           this.send({ type: 'monitor', level: this.view.levels.musicMonitor })
           toMain({ type: 'set-duck', duck: this.view.duck })
+          // Ya está sonando para la reunión: es el momento honesto para contarlo en el chat.
+          this.requestAnnouncement('started')
           break
+
+        case 'music-pending':
+          // El grafo quedó armado; no hay nada que reintentar, sólo decirlo mientras dure. El
+          // motivo no va a `error`: el cartel de `waiting` ya lo explica, y dos avisos del mismo
+          // problema se leen como dos problemas.
+          this.patch({ audio: 'waiting', error: null, needsGesture: false })
+          break
+
         case 'outgoing-restored':
           this.notice('Your microphone had gone silent to the meeting — restored.')
           break
@@ -133,7 +222,7 @@ export class Session {
           this.patch({ audio: 'error', error: `Could not pick up the audio: ${msg.error}` })
           break
         case 'status':
-          this.patch({ ducking: msg.ducking })
+          this.patch({ ducking: msg.ducking, outgoing: msg.outgoing })
           break
       }
     })
@@ -148,6 +237,22 @@ export class Session {
     void this.installRoomKey()
     this.patch({ canBroadcast: this.chat.canSend() })
 
+    // El chat se abre al entrar, no al primer envío. Cerrado, Meet ni siquiera monta los mensajes
+    // entrantes: quien llegaba a una reunión con música no recibía el estado y veía una sala vacía
+    // hasta que abriera el chat a mano, cosa que nadie hace porque nada se lo pide.
+    if (this.view.shareQueue) void this.openChat()
+
+    // Alguien nuevo en la llamada con la música ya sonando no tiene forma de saber de dónde sale.
+    watchParticipants(
+      () => this.requestAnnouncement('joined'),
+      (reading) => {
+        const { participants } = this.view
+        if (reading.count !== participants.count || reading.source !== participants.source) {
+          this.patch({ participants: reading })
+        }
+      },
+    )
+
     // El campo del chat aparece y desaparece según el panel esté abierto; revisamos cada tanto.
     setInterval(() => {
       const can = this.chat.canSend()
@@ -159,8 +264,10 @@ export class Session {
       if (JSON.stringify(diag) !== JSON.stringify(this.view.chat)) this.patch({ chat: diag })
     }, 4000)
 
-    // El botón de mutear de Meet corta el track mezclado entero, música incluida.
-    setInterval(() => this.checkMicMuted(), 1500)
+    // El botón de mutear de Meet corta el track mezclado entero, música incluida. Además hay que
+    // seguirle la posición de cerca: el nuestro se dibuja encima y no puede ir un paso atrás.
+    setInterval(() => this.readMicButton(), 400)
+    window.addEventListener('resize', () => this.readMicButton())
     setInterval(() => toMain({ type: 'query-status' }), 400)
   }
 
@@ -174,7 +281,7 @@ export class Session {
     try {
       this.chat.setKey(await deriveKey(code))
       this.patch({ canBroadcast: this.chat.canSend() })
-      this.announce()
+      this.sayHello()
     } catch {
       this.notice('Could not set up the encrypted queue channel; staying in solo mode.')
     }
@@ -183,10 +290,64 @@ export class Session {
   /**
    * Anunciarse al entrar. Es lo que hace que, si ya hay alguien poniendo música, su extensión te
    * mande el estado y veas la cola desde el primer momento en vez de una sala vacía.
+   *
+   * Se reintenta porque al entrar todavía puede no haber clave ni chat: sin el reintento, el
+   * `hello` se perdía y la sala se veía vacía hasta que el host tocara algo por su cuenta.
    */
-  private announce(): void {
+  private sayHello(attempt = 0): void {
+    if (this.helloTimer !== null) clearTimeout(this.helloTimer)
+    this.helloTimer = null
+
     if (!this.view.shareQueue || this.view.isHost) return
-    this.chat.send({ op: 'hello', from: this.peerId, name: this.view.displayName })
+    if (this.chat.send({ op: 'hello', from: this.peerId, name: this.view.displayName })) return
+    if (attempt >= 5) return
+    this.helloTimer = setTimeout(() => this.sayHello(attempt + 1), 2000)
+  }
+
+  /**
+   * Pide un aviso en el chat, en texto plano y a la vista de todos.
+   *
+   * Sale sólo del host y sólo con la música sonando de verdad. La ventana no descarta el pedido
+   * cuando está cerrada: lo pospone hasta que se abre, así quien acaba de entrar igual se entera.
+   * Es lo contrario de un throttle común, y es a propósito — el pedido viene de una persona que
+   * está mirando la reunión sin entender de dónde sale la música.
+   */
+  private requestAnnouncement(reason: 'started' | 'joined' | 'manual'): void {
+    if (!this.canAnnounce()) return
+
+    if (reason === 'manual') {
+      // Pedido a mano: manda sobre la ventana, el techo y cualquier aviso ya programado.
+      if (this.announceTimer !== null) clearTimeout(this.announceTimer)
+      this.announceTimer = null
+    } else {
+      if (this.announceTimer !== null) return
+      // Reenganchar el audio no es empezar de nuevo. Sin esto, cada corte y vuelta del enlace
+      // producía otro aviso en el chat sin que hubiera entrado nadie.
+      if (reason === 'started' && this.lastAnnounceAt !== 0) return
+      if (this.view.announced >= ANNOUNCE_MAX) return
+    }
+
+    const first = this.lastAnnounceAt === 0
+    const immediate = reason === 'manual' || (reason === 'started' && first)
+    const wait = immediate
+      ? 0
+      : Math.max(JOIN_COALESCE_MS, ANNOUNCE_GAP_MS - (Date.now() - this.lastAnnounceAt))
+
+    this.announceTimer = setTimeout(() => {
+      this.announceTimer = null
+      if (!this.canAnnounce()) return
+      const text = announcementText({
+        title: this.view.state.current?.title ?? null,
+        host: this.view.displayName,
+      })
+      if (!this.chat.sendPlain(text)) return
+      this.lastAnnounceAt = Date.now()
+      this.patch({ announced: this.view.announced + 1 })
+    }, wait)
+  }
+
+  private canAnnounce(): boolean {
+    return this.view.announce && this.view.isHost && this.view.audio === 'on'
   }
 
   /**
@@ -271,6 +432,11 @@ export class Session {
 
     if (this.volumeTimer !== null) clearTimeout(this.volumeTimer)
     this.volumeTimer = null
+    if (this.announceTimer !== null) clearTimeout(this.announceTimer)
+    this.announceTimer = null
+    // La próxima sesión de música vuelve a merecer su aviso: es otra cosa la que suena.
+    this.lastAnnounceAt = 0
+    this.patch({ announced: 0 })
     this.adActive = false
 
     const mic = this.view.voiceMuted ? this.preMuteMic : this.view.levels.mic
@@ -300,16 +466,25 @@ export class Session {
     this.send({ type: 'focus-player' })
   }
 
-  /** Acepta una URL de YouTube o un id suelto. En esta versión no hay búsqueda por nombre. */
-  async submit(input: string): Promise<void> {
-    const text = input.trim()
-    if (!text) return
-    const videoId = parseVideoId(text)
-    if (!videoId) {
-      this.notice('That does not look like a YouTube link. Copy the video URL and paste it here.')
-      return
-    }
-    this.send({ type: 'resolve', videoId })
+  /**
+   * Acepta una URL de YouTube o un id suelto. En esta versión no hay búsqueda por nombre.
+   *
+   * Devuelve qué pasó en vez de avisar por su cuenta. Un texto que no se entiende es un error **del
+   * campo**: tiene que quedar marcado ahí, con lo tipeado intacto para poder corregirlo, y no como
+   * un aviso flotando arriba de todo que además se va solo a los cuatro segundos.
+   */
+  submit(input: string): SubmitResult {
+    const parsed = parseLink(input)
+    if (!parsed.ok) return parsed.reason === 'empty' ? { ok: true } : { ok: false, problem: parsed }
+
+    this.patch({ resolving: true })
+    this.send({ type: 'resolve', videoId: parsed.videoId })
+    // Red de seguridad: si oEmbed no contesta, la canción se encola igual con el id y el título
+    // real llega cuando empieza a sonar. Lo que no puede quedar es el spinner girando para siempre.
+    setTimeout(() => {
+      if (this.view.resolving) this.patch({ resolving: false })
+    }, 8000)
+    return { ok: true }
   }
 
   add(track: Track): void {
@@ -328,6 +503,16 @@ export class Session {
   remove(id: string): void {
     if (this.authoritative) this.applyLocal({ type: 'remove', id })
     else this.chat.send({ op: 'remove', id, from: this.peerId })
+  }
+
+  /** Adelantar una canción de la cola. Como saltear, lo puede hacer cualquiera. */
+  jump(id: string): void {
+    if (this.authoritative) {
+      this.applyLocal({ type: 'jump', id })
+      return
+    }
+    if (this.chat.send({ op: 'jump', id, from: this.peerId })) this.notice('Moving that one up…')
+    else this.notice('Could not reach the meeting queue. Open the Meet chat and try again.')
   }
 
   /** Pausar y reanudar son de la reunión: si reproduce otro, se le pide a esa persona. */
@@ -429,8 +614,33 @@ export class Session {
     this.patch({ canBroadcast: this.chat.canSend() })
     void this.savePrefs()
     if (shareQueue) {
-      void this.openChat().then(() => this.announce())
+      void this.openChat().then(() => this.sayHello())
     }
+  }
+
+  /**
+   * Avisar por el chat cuando entra alguien. Es un mensaje visible para toda la reunión, así que es
+   * una decisión explícita — igual que compartir la cola, y por el mismo motivo.
+   */
+  setAnnounce(announce: boolean): void {
+    this.patch({ announce })
+    void this.savePrefs()
+  }
+
+  /**
+   * Contarlo ahora, sin esperar a que entre nadie.
+   *
+   * Es la salida cuando la lectura del roster no funciona: el DOM de Meet no es una API y puede
+   * dejar de dejarse leer en cualquier momento, así que tiene que haber una forma de hacerlo a mano
+   * que no dependa de nada de eso.
+   */
+  announceNow(): void {
+    this.requestAnnouncement('manual')
+    this.notice(
+      this.view.audio === 'on'
+        ? 'Posting in the chat what is playing…'
+        : 'Nothing is playing from here, so there is nothing to announce.',
+    )
   }
 
   /** Saltar a un punto de la canción, desde el propio Meet. */
@@ -525,11 +735,16 @@ export class Session {
         break
 
       case 'resolved':
+        this.patch({ resolving: false })
         this.add(event.track)
         break
 
       case 'error':
-        this.patch({ error: event.error, audio: event.fatal ? 'error' : this.view.audio })
+        this.patch({
+          resolving: false,
+          error: event.error,
+          audio: event.fatal ? 'error' : this.view.audio,
+        })
         break
     }
   }
@@ -594,6 +809,11 @@ export class Session {
       case 'skip':
         this.peers.add(msg.from)
         if (this.view.isHost) this.applyLocal({ type: 'next' })
+        break
+
+      case 'jump':
+        this.peers.add(msg.from)
+        if (this.view.isHost) this.applyLocal({ type: 'jump', id: msg.id })
         break
 
       case 'stop':
@@ -701,21 +921,31 @@ export class Session {
     })
   }
 
-  /**
-   * Busca el botón de micrófono de Meet y lee si está silenciado.
+/**
+   * Lee el botón de micrófono de Meet: si está silenciado y dónde está dibujado.
    *
-   * Los patrones siguen siendo multilingües a propósito: la interfaz de la extensión está en
-   * inglés, pero la de Meet está en el idioma de la cuenta de quien la usa.
+   * El elemento se cachea porque encontrarlo obliga a recorrer todos los botones de la página, y
+   * esto corre varias veces por segundo. Meet lo reemplaza al cambiar de layout, así que se
+   * revalida por `isConnected` en vez de confiar para siempre.
    */
-  private checkMicMuted(): void {
-    const buttons = Array.from(document.querySelectorAll<HTMLElement>('[role="button"][aria-label], button[aria-label]'))
-    const mic = buttons.find((b) => /micr[oó]fono|microphone/i.test(b.getAttribute('aria-label') ?? ''))
-    if (!mic) return
-    const pressed = mic.getAttribute('aria-pressed') ?? mic.getAttribute('data-is-muted')
-    const label = mic.getAttribute('aria-label') ?? ''
-    // Meet alterna el label entre "Activar micrófono" y "Silenciar micrófono".
-    const muted = pressed === 'true' || /activar|unmute|turn on/i.test(label)
+  private readMicButton(): void {
+    if (!this.micEl?.isConnected) this.micEl = findMicButton()
+    const mic = this.micEl
+    if (!mic) {
+      if (this.view.micButton !== null) this.patch({ micButton: null })
+      return
+    }
+
+    const muted = isMutedLabel(
+      mic.getAttribute('aria-label') ?? '',
+      mic.getAttribute('aria-pressed') ?? mic.getAttribute('data-is-muted'),
+    )
     if (muted !== this.view.micMuted) this.patch({ micMuted: muted })
+
+    // Medir sólo cuando vamos a tapar algo. Sin música el botón de Meet es el botón correcto y no
+    // hay nada que dibujar encima, así que tampoco hay motivo para estar midiéndolo.
+    const box = this.view.audio === 'on' ? boxOf(mic) : null
+    if (!sameBox(box, this.view.micButton)) this.patch({ micButton: box })
   }
 
   // ---------------------------------------------------------------- prefs
@@ -741,6 +971,7 @@ export class Session {
       'displayName',
       'theme',
       'shareQueue',
+      'announce',
     ])) as Partial<Prefs>
     const themePref = stored.theme ?? 'system'
     // Meet ya sabe cómo te llamás; preguntártelo de nuevo sería un campo de más. Si no se puede
@@ -753,6 +984,7 @@ export class Session {
       themePref,
       theme: resolveTheme(themePref),
       shareQueue: stored.shareQueue ?? true,
+      announce: stored.announce ?? true,
     })
   }
 
@@ -763,6 +995,7 @@ export class Session {
       displayName: this.view.displayName,
       theme: this.view.themePref,
       shareQueue: this.view.shareQueue,
+      announce: this.view.announce,
     })
   }
 

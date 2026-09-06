@@ -47,3 +47,14 @@ describe('protocolo', () => {
     expect(fromJson('')).toBeNull()
   })
 })
+
+describe('adelantar por el chat', () => {
+  it('viaja y vuelve entero', () => {
+    const msg: Msg = { op: 'jump', id: 'dQw4w9WgXcQ', from: 'p1' }
+    expect(roundtrip(msg)).toEqual(msg)
+  })
+
+  it('sin id no es un mensaje válido', () => {
+    expect(fromJson(JSON.stringify({ op: 'jump', from: 'p1' }))).toBeNull()
+  })
+})

@@ -2,9 +2,9 @@
  * Corre en el mundo MAIN a document_start, antes que cualquier script de Meet.
  *
  * Principio de diseño: **mientras no haya música, no tocamos nada.** getUserMedia devuelve el
- * micrófono tal cual y ni siquiera se crea un AudioContext, así que la extensión instalada pero
- * ociosa no puede colorear ni ensuciar tu voz. Recién cuando empieza a sonar algo armamos el
- * mezclador y cambiamos la pista en caliente con RTCRtpSender.replaceTrack().
+ * micrófono tal cual, no se crea ningún AudioContext y ni siquiera corre un timer, así que la
+ * extensión instalada pero ociosa no puede colorear ni ensuciar tu voz. Recién cuando empieza a
+ * sonar algo armamos el mezclador y cambiamos la pista en caliente con RTCRtpSender.replaceTrack().
  *
  * Acá NO hay APIs de chrome.* — el mundo MAIN no las tiene. Todo va por window.postMessage contra
  * el content script aislado.
@@ -20,8 +20,16 @@ if (!md || typeof md.getUserMedia !== 'function') {
   install(md)
 }
 
+/** Lo que se le dice al panel cuando el grafo está armado pero Meet todavía no transmite audio. */
+const NOT_SENDING_YET =
+  'Meet is not sending your microphone yet. Turn it on in Meet and the music comes in on its own.'
+
 function install(mediaDevices: MediaDevices): void {
   const originalGum = mediaDevices.getUserMedia.bind(mediaDevices)
+  const originalGdm =
+    typeof mediaDevices.getDisplayMedia === 'function'
+      ? mediaDevices.getDisplayMedia.bind(mediaDevices)
+      : null
 
   let ctx: AudioContext | null = null
   let mixer: Mixer | null = null
@@ -43,6 +51,18 @@ function install(mediaDevices: MediaDevices): void {
   let swapping = false
   /** Emisores a los que ya les pusimos una pista: los vigilamos para que no queden vacíos. */
   const managed = new Set<RTCRtpSender>()
+  /**
+   * Pistas de audio que NO son el micrófono: las que salen de getDisplayMedia cuando alguien
+   * comparte una pestaña con sonido. Meet las manda por un emisor aparte y pisarlas con la mezcla
+   * silenciaría lo que la persona está compartiendo.
+   */
+  const displayTrackIds = new Set<string>()
+
+  /** Cuántos emisores de Meet están llevando la mezcla ahora mismo. 0 = nadie nos escucha. */
+  let attached = 0
+  /** El reconciliador sólo existe mientras hay música: sin ella no corre ningún timer. */
+  let reconcileTimer: ReturnType<typeof setInterval> | null = null
+  let watchdogTimer: ReturnType<typeof setInterval> | null = null
 
   const post = (msg: ToIsolated): void => {
     window.postMessage({ __bridge: BRIDGE, dir: 'to-isolated', msg }, window.location.origin)
@@ -72,11 +92,27 @@ function install(mediaDevices: MediaDevices): void {
 
     try {
       const mixed = ensureMixer().createMixedStream(real)
+      const track = mixed.getAudioTracks()[0]
+      if (track) mixedTrack = track
       post({ type: 'mic-attached' })
       return mixed
     } catch (err) {
       console.error('[meet-music] mixing failed, returning the microphone untouched', err)
       return real
+    }
+  }
+
+  /**
+   * El audio de pantalla compartida no es el micrófono: se anota para no reemplazarlo nunca.
+   * Sin esto, compartir una pestaña con sonido mientras suena música dejaba muda esa pestaña.
+   */
+  if (originalGdm) {
+    mediaDevices.getDisplayMedia = async function (
+      constraints?: DisplayMediaStreamOptions,
+    ): Promise<MediaStream> {
+      const stream = await originalGdm(constraints)
+      for (const track of stream.getAudioTracks()) displayTrackIds.add(track.id)
+      return stream
     }
   }
 
@@ -93,28 +129,36 @@ function install(mediaDevices: MediaDevices): void {
   const NativePeerConnection = window.RTCPeerConnection
   window.RTCPeerConnection = new Proxy(NativePeerConnection, {
     construct(target, args, newTarget) {
-      const pc = Reflect.construct(target, args, newTarget) as RTCPeerConnection
-      connections.add(pc)
-      pc.addEventListener('connectionstatechange', () => {
-        if (pc.connectionState === 'closed') connections.delete(pc)
+      const created = Reflect.construct(target, args, newTarget) as RTCPeerConnection
+      connections.add(created)
+      created.addEventListener('connectionstatechange', () => {
+        if (created.connectionState === 'closed') connections.delete(created)
       })
-      return pc
+      // Cuando se suma alguien, Meet renegocia. Es el momento exacto en que aparece un emisor
+      // nuevo con el micrófono crudo, así que reconciliamos ahí mismo en vez de esperar al sondeo.
+      created.addEventListener('negotiationneeded', () => void reconcileOutgoing())
+      created.addEventListener('signalingstatechange', () => void reconcileOutgoing())
+      return created
     },
   })
 
   const audioSenders = (): RTCRtpSender[] => {
     const senders: RTCRtpSender[] = []
-    for (const pc of connections) {
+    for (const connection of connections) {
       try {
-        for (const sender of pc.getSenders()) {
+        for (const sender of connection.getSenders()) {
           if (sender.track?.kind === 'audio') senders.push(sender)
         }
       } catch {
-        connections.delete(pc)
+        connections.delete(connection)
       }
     }
     return senders
   }
+
+  /** ¿Esta pista es un micrófono que deberíamos estar reemplazando por la mezcla? */
+  const isMicTrack = (track: MediaStreamTrack | null): track is MediaStreamTrack =>
+    track !== null && track.kind === 'audio' && track !== mixedTrack && !displayTrackIds.has(track.id)
 
   /**
    * Si Meet cambia de micrófono mientras hay música, va a pisar nuestra pista mezclada con la
@@ -125,10 +169,52 @@ function install(mediaDevices: MediaDevices): void {
     this: RTCRtpSender,
     track: MediaStreamTrack | null,
   ) {
-    if (!swapping && mixedTrack && track && track.kind === 'audio' && track !== mixedTrack) {
+    if (!swapping && musicActive() && mixedTrack && isMicTrack(track)) {
+      managed.add(this)
       return nativeReplaceTrack.call(this, mixedTrack)
     }
     return nativeReplaceTrack.call(this, track)
+  }
+
+  /**
+   * `addTrack` y `addTransceiver` son el otro camino por el que Meet empieza a transmitir audio, y
+   * el que se usa cuando **abre una conexión nueva** — que es justo lo que pasa cuando se suma
+   * alguien a la reunión. Sin interceptarlos, esa conexión nace con el micrófono crudo y la persona
+   * que acaba de entrar no escucha la música.
+   */
+  const nativeAddTrack = NativePeerConnection.prototype.addTrack
+  NativePeerConnection.prototype.addTrack = function (
+    this: RTCPeerConnection,
+    track: MediaStreamTrack,
+    ...streams: MediaStream[]
+  ): RTCRtpSender {
+    connections.add(this)
+    if (musicActive() && mixedTrack && isMicTrack(track)) {
+      const sender = nativeAddTrack.call(this, mixedTrack, ...streams)
+      managed.add(sender)
+      return sender
+    }
+    return nativeAddTrack.call(this, track, ...streams)
+  }
+
+  const nativeAddTransceiver = NativePeerConnection.prototype.addTransceiver
+  NativePeerConnection.prototype.addTransceiver = function (
+    this: RTCPeerConnection,
+    trackOrKind: MediaStreamTrack | string,
+    init?: RTCRtpTransceiverInit,
+  ): RTCRtpTransceiver {
+    connections.add(this)
+    if (
+      musicActive() &&
+      mixedTrack &&
+      typeof trackOrKind !== 'string' &&
+      isMicTrack(trackOrKind)
+    ) {
+      const transceiver = nativeAddTransceiver.call(this, mixedTrack, init)
+      managed.add(transceiver.sender)
+      return transceiver
+    }
+    return nativeAddTransceiver.call(this, trackOrKind, init)
   }
 
   /**
@@ -140,6 +226,7 @@ function install(mediaDevices: MediaDevices): void {
     let applied = 0
     try {
       for (const sender of audioSenders()) {
+        if (sender.track !== track && displayTrackIds.has(sender.track?.id ?? '')) continue
         try {
           await nativeReplaceTrack.call(sender, track)
           managed.add(sender)
@@ -152,6 +239,60 @@ function install(mediaDevices: MediaDevices): void {
       swapping = false
     }
     return applied
+  }
+
+  /**
+   * Mantiene la mezcla en **todos** los emisores de audio de Meet, no sólo en los que existían
+   * cuando arrancó la música.
+   *
+   * Este es el motivo por el que quien entraba después no escuchaba nada: al sumarse una persona,
+   * Meet renegocia —y a veces abre una conexión nueva— con la pista cruda del micrófono. Un
+   * intercambio de una sola vez no la alcanza, así que la música quedaba sonando sólo para quienes
+   * ya estaban, y la única salida era que quien reproducía saliera y volviera a entrar.
+   *
+   * Corre sólo mientras hay música: sin ella el timer ni siquiera existe.
+   */
+  const reconcileOutgoing = async (): Promise<void> => {
+    if (swapping || !musicActive()) return
+    const track = mixedTrack
+    if (!track || track.readyState !== 'live') return
+
+    const stale = audioSenders().filter((s) => isMicTrack(s.track))
+    if (stale.length > 0) {
+      swapping = true
+      try {
+        for (const sender of stale) {
+          try {
+            await nativeReplaceTrack.call(sender, track)
+            managed.add(sender)
+          } catch {
+            managed.delete(sender)
+          }
+        }
+      } finally {
+        swapping = false
+      }
+    }
+
+    const carrying = audioSenders().filter((s) => s.track === track).length
+    if (carrying === attached) return
+    const wasAttached = attached > 0
+    attached = carrying
+    if (carrying > 0 && !wasAttached) post({ type: 'music-attached' })
+    if (carrying === 0 && wasAttached) post({ type: 'music-pending', reason: NOT_SENDING_YET })
+  }
+
+  const startWatchers = (): void => {
+    if (reconcileTimer === null) reconcileTimer = setInterval(() => void reconcileOutgoing(), 1000)
+    if (watchdogTimer === null) watchdogTimer = setInterval(() => void watchOutgoing(), 3000)
+  }
+
+  const stopWatchers = (): void => {
+    if (reconcileTimer !== null) clearInterval(reconcileTimer)
+    reconcileTimer = null
+    if (watchdogTimer !== null) clearInterval(watchdogTimer)
+    watchdogTimer = null
+    attached = 0
   }
 
   // ---------------------------------------------------------------- música
@@ -179,15 +320,13 @@ function install(mediaDevices: MediaDevices): void {
     }
 
     mixedTrack = track
-    const applied = await swapOutgoing(track)
+    attached = await swapOutgoing(track)
+    // Se arranca igual con cero emisores: el reconciliador engancha la mezcla en cuanto Meet
+    // empiece a transmitir, sin que haya que volver a apretar nada.
+    startWatchers()
 
-    if (applied === 0) {
-      // Meet todavía no está transmitiendo audio (por ejemplo, entraste con el micrófono apagado).
-      // Igual queda todo armado: en cuanto lo prenda, el patch de getUserMedia devuelve la mezcla.
-      post({
-        type: 'music-failed',
-        error: 'Meet is not sending audio yet. Turn on your mic and the music comes in on its own.',
-      })
+    if (attached === 0) {
+      post({ type: 'music-pending', reason: NOT_SENDING_YET })
       return
     }
     post({ type: 'music-attached' })
@@ -196,7 +335,7 @@ function install(mediaDevices: MediaDevices): void {
   const onSignal = async (signal: Signal): Promise<void> => {
     if (signal.kind === 'offer') {
       await detachMusic()
-      pc = new RTCPeerConnection()
+      pc = new NativePeerConnection()
 
       pc.ontrack = (event) => {
         const stream = event.streams[0] ?? new MediaStream([event.track])
@@ -227,12 +366,15 @@ function install(mediaDevices: MediaDevices): void {
    */
   const captureDisplay = async (): Promise<void> => {
     await detachMusic()
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+    const stream = await mediaDevices.getDisplayMedia({ video: true, audio: true })
     const audio = stream.getAudioTracks()
     for (const track of stream.getVideoTracks()) track.stop()
     if (audio.length === 0) {
       throw new Error('You need to tick "Share tab audio" in Chrome\'s picker')
     }
+    // Es nuestra fuente de música, no algo que Meet esté compartiendo: sale de la lista de
+    // intocables o el mezclador no podría usarla.
+    for (const track of audio) displayTrackIds.delete(track.id)
     await useStream(new MediaStream(audio))
   }
 
@@ -265,6 +407,7 @@ function install(mediaDevices: MediaDevices): void {
   const detachMusic = async (): Promise<void> => {
     const wasActive = musicActive()
     musicStream = null
+    stopWatchers()
 
     mixer?.clearMusicSource()
     pc?.close()
@@ -336,13 +479,16 @@ function install(mediaDevices: MediaDevices): void {
           musicActive: musicActive(),
           ducking: mixer?.isDucking() ?? false,
           levels: mixer ? mixer.getLevels() : { ...DEFAULT_LEVELS },
+          outgoing: attached,
+          senders: audioSenders().length,
         })
         break
     }
   })
 
   /**
-   * Vigila que Meet nunca quede transmitiendo una pista muerta.
+   * Vigila que Meet nunca quede transmitiendo una pista muerta, y que el micrófono que alimenta al
+   * mezclador siga vivo.
    *
    * Es el peor fallo posible del patch porque es invisible: Meet te muestra como muteado, tu botón
    * de micrófono dice que no lo estás, y nadie te escucha. Ante la duda preferimos reponer el
@@ -350,6 +496,16 @@ function install(mediaDevices: MediaDevices): void {
    */
   const watchOutgoing = async (): Promise<void> => {
     if (swapping) return
+
+    // El micrófono que entra al mezclador puede morirse solo (cambio de dispositivo, suspensión).
+    // La pista mezclada sigue "viva" y silenciosa, así que nada más lo delataría.
+    if (musicActive() && mixer && !realStream?.getAudioTracks().some((t) => t.readyState === 'live')) {
+      const fresh = await liveMicTrack()
+      if (fresh && realStream) {
+        mixer.setMicSource(realStream)
+        post({ type: 'outgoing-restored' })
+      }
+    }
 
     const broken = [...managed].filter((s) => !s.track || s.track.readyState !== 'live')
     if (broken.length === 0) return
@@ -371,8 +527,6 @@ function install(mediaDevices: MediaDevices): void {
     }
     post({ type: 'outgoing-restored' })
   }
-
-  setInterval(() => void watchOutgoing(), 3000)
 
   post({ type: 'patch-installed' })
 }
