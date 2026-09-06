@@ -106,9 +106,21 @@ For audio issues, include:
 
 ## Cutting a release
 
-1. Bump `version` in `src/static/manifest.json` and `package.json`.
-2. Tag it: `git tag v1.0.0 && git push --tags`.
+There is nothing to cut: **merging to main publishes it.** The `Version` workflow reads the type of
+the change and bumps accordingly — `feat` a minor, `fix`/`hotfix`/`perf` a patch, a `!` or a
+`BREAKING CHANGE` a major, and `docs`/`chore`/`ci`/`test`/`refactor`/`style` nothing at all. Then it
+writes both `version` fields, tags, and the release workflow builds, tests, checks that the tag
+matches the manifest and publishes the ready-to-install zip.
 
-The release workflow builds, runs the tests, **checks that the tag matches the manifest version** and
-publishes the ready-to-install zip. CI has already checked that the manifest and the package agree,
-so the tag is the only thing left to get right.
+Which means the prefix on your branch decides the version number. Name it for what the change
+actually is: a `chore/` branch carrying a feature releases nothing, and a `feat/` branch carrying a
+typo fix bumps a minor for nobody.
+
+The type is read from the branch of the merged PR **and** from the subject of the squashed commit,
+and the stronger of the two wins — so a `fix/` branch whose PR title says `feat:` still gets its
+minor.
+
+Two escape hatches. To pick the number yourself, edit `version` in `src/static/manifest.json` and
+`package.json` in the PR — the counting starts from `package.json`, so the automation continues from
+whatever you put there. To publish a tag that was never merged, push it (`git push --tags`) or run
+the release workflow from the Actions tab with the tag as its input.

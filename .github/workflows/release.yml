@@ -1,10 +1,25 @@
 name: Release
 
-# Publica el zip listo para instalar cuando se etiqueta una versión (v1.0.0, v1.1.0…).
+# Publica el zip listo para instalar de una versión etiquetada.
+#
+# Se llega acá de tres maneras: el workflow Version lo invoca solo después de bumpear y etiquetar
+# en un merge a main —el camino normal—, un `git push --tags` hecho a mano, o a dedo desde la
+# pestaña Actions. En los tres casos lo que se publica es un tag, nunca una rama.
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag to publish, with its v (v1.0.0).
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to publish, with its v (v1.0.0).
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,8 +27,13 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Invocado o a dedo llega por input; con un push de tag, el tag es la ref.
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: pnpm/action-setup@v4
 
@@ -30,26 +50,25 @@ jobs:
       # La versión del manifest tiene que coincidir con la etiqueta: si no, la gente instala
       # un zip que dice una versión distinta de la que descargó.
       - name: Check manifest version matches the tag
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           manifest=$(node -p "require('./dist/manifest.json').version")
-          if [ "$tag" != "$manifest" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match manifest version $manifest"
+          if [ "${TAG#v}" != "$manifest" ]; then
+            echo "::error::Tag $TAG does not match manifest version $manifest"
             exit 1
           fi
 
       - name: Package the unpacked extension
-        run: cd dist && zip -r ../meet-music-${{ github.ref_name }}.zip .
+        run: cd dist && zip -r "../meet-music-$TAG.zip" .
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: meet-music-${{ github.ref_name }}.zip
+          tag_name: ${{ env.TAG }}
+          files: meet-music-${{ env.TAG }}.zip
           generate_release_notes: true
           body: |
             ## Install
 
-            1. Download `meet-music-${{ github.ref_name }}.zip` below and unzip it.
+            1. Download `meet-music-${{ env.TAG }}.zip` below and unzip it.
             2. Open `chrome://extensions` and turn on **Developer mode**.
             3. Click **Load unpacked** and pick the unzipped folder.
             4. Join a Google Meet call — a music button appears next to the controls.
