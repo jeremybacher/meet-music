@@ -19,7 +19,7 @@ corepack enable          # this project uses pnpm (packageManager is pinned)
 pnpm install
 pnpm dev                 # esbuild watch → dist/
 pnpm build               # production bundle → dist/
-pnpm test                # vitest, 61 tests
+pnpm test                # vitest, 87 tests
 pnpm typecheck           # tsc --noEmit
 ```
 
@@ -67,26 +67,32 @@ Four execution contexts, none of which share variables:
 These are load-bearing. Breaking one is either deliberate or a bug — never incidental.
 
 1. **Installed but idle, the extension touches nothing.** With no music, `getUserMedia` returns the
-   microphone untouched and no `AudioContext` is created. Anything you add to the voice path must
-   only happen while music is playing.
-2. **The voice passes through no processing node**, only a gain. The limiter hangs off the music
+   microphone untouched, no `AudioContext` is created and no timer runs. Anything you add to the
+   voice path — a watcher included — must only exist while music is playing.
+2. **While there is music, every outgoing audio sender carries the mix.** Meet renegotiates whenever
+   somebody joins, sometimes on a brand-new `RTCPeerConnection`, and the new sender comes up with
+   the raw microphone. So `addTrack`, `addTransceiver` and `replaceTrack` are intercepted *and* a
+   reconciler re-checks every sender each second. Anything that attaches once, at the moment music
+   starts, is wrong for the next person through the door. Screen-share audio (`getDisplayMedia`) is
+   tracked separately and never replaced.
+3. **The voice passes through no processing node**, only a gain. The limiter hangs off the music
    branch; the two branches sum only at the destination. `setLevels({ musicBroadcast })` writes to
    `musicBroadcastGain` and never to `micGain`. `test/mixer.test.ts` verifies the topology.
-3. **Meet's DOM is not an API.** Selectors are centralised and heuristic on purpose, and there is
+4. **Meet's DOM is not an API.** Selectors are centralised and heuristic on purpose, and there is
    always a degradation path: if something is not found, the panel says so and keeps working in solo
    mode instead of falling over.
-4. **The chat is an expensive channel.** Every message is a visible line for anyone without the
+5. **The chat is an expensive channel.** Every message is a visible line for anyone without the
    extension. Before adding a message type, ask whether it is needed and whether it should be
    coalesced (see `LATEST_WINS` and the volume debounce in `chat-transport.ts`).
-5. **Sending never clobbers a draft.** If the chat field has text, the send is deferred and the
+6. **Sending never clobbers a draft.** If the chat field has text, the send is deferred and the
    draft plus focus are saved and restored.
-6. **Encryption is keyed from the meeting code.** AES-GCM authenticates, so anything not produced by
+7. **Encryption is keyed from the meeting code.** AES-GCM authenticates, so anything not produced by
    the extension fails to decrypt and is discarded — that is what stops a participant from typing a
    command into the chat. It does not claim to resist a malicious participant: whoever has the code
    has the key.
-7. **Identity and display name are separate.** Each participant has a stable id kept apart from the
+8. **Identity and display name are separate.** Each participant has a stable id kept apart from the
    name, so two people on the default name never count as one.
-8. **No new dependencies** unless they solve something that cannot reasonably be done by hand. Today
+9. **No new dependencies** unless they solve something that cannot reasonably be done by hand. Today
    there are two: `preact` and `esbuild`.
 
 ## Conventions
@@ -117,7 +123,8 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
 | `src/content/panel.tsx` | Mounts the panel in a shadow root. |
 | `src/content/app.tsx` | The whole panel UI. Pure painting — no logic. |
 | `src/content/session.ts` | Panel controller: ports, bridge, transport, queue state, roles. Exposes a flat `SessionView`. |
-| `src/content/chat-transport.ts` | Shared queue over the Meet chat, without clobbering drafts. |
+| `src/content/chat-transport.ts` | Shared queue over the Meet chat, without clobbering drafts. Also the one plain-text line. |
+| `src/content/meet-participants.ts` | How many people are in the call, to notice someone joining. |
 | `src/content/styles.ts` | The panel's CSS, as a string (shadow root). |
 | `src/content/meet-url.ts` | In a call or not; the meeting code. |
 | `src/content/meet-identity.ts` | Display name, read from Meet's account button. |
@@ -125,6 +132,7 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
 | `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
 | `src/core/wire.ts` | Wire format: `[mm1] base64url(iv‖ciphertext)`, one line. |
 | `src/core/protocol.ts` | Message types and validation. |
+| `src/core/announce.ts` | The readable chat line, written for people without the extension. |
 | `src/core/queue.ts` | Pure reducer for the queue state. |
 | `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |
 | `src/core/theme.ts` | Theme preference and system-theme watching. |
@@ -140,6 +148,10 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
 Tests cover what can be isolated: the queue reducer, the protocol, the wire format and encryption,
 the mixer (with the fake `AudioContext` in `test/fake-audio.ts`), theming, URL parsing and identity
 extraction.
+
+`test/styles.test.ts` guards the design system itself: both theme blocks declare the same tokens, no
+literal colour lives outside them beyond the two documented quotes from Meet, and no backtick sneaks
+into the `PANEL_CSS` template (one would truncate the stylesheet silently).
 
 **The audio patch and the chat transport are not covered** — they depend on Meet's DOM and on browser
 APIs that cannot be simulated faithfully. If you touch either, exercise them by hand with two Google

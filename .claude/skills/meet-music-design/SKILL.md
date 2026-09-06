@@ -32,6 +32,8 @@ Panel tokens, options-page tokens, and every component recipe live in
 3. **Say only what is true right now.** Every banner and hint is conditional. There is no permanent
    green "all good" state — if the audio is working there is nothing to report, and a standing
    badge would be noise. Add UI that appears when it has something to say and disappears otherwise.
+   The corollary: when something *is* wrong, say it. "On air" while no Meet sender carries the mix
+   is a lie, which is why `waiting` exists as its own state with its own badge tone.
 4. **Technical detail goes in the tooltip, never the surface.** "Audio source: Web Audio",
    `chat open · send button found · sent 4 · received 9` — these matter only when reporting a
    problem, so they live in `title`. The visible line stays in plain language.
@@ -44,8 +46,18 @@ Panel tokens, options-page tokens, and every component recipe live in
    rule. The two exceptions are documented in `references/tokens.md` (Meet's own mute red and the
    activity green) — do not add a third without a reason of the same kind.
 7. **State is an attribute, not a class.** `data-active`, `data-muted`, `data-tone`, `data-primary`,
-   `data-ducking`. Styling hangs off those. Keep it that way: it reads the same in the JSX and in
-   the CSS.
+   `data-ducking`, `data-quiet`, `data-icon`. Styling hangs off those. Keep it that way: it reads
+   the same in the JSX and in the CSS.
+8. **Order the panel by frequency, not by architecture.** Top to bottom: what went wrong, what is
+   playing, the one main action, how to add, what is next, and only then the knobs and the exit.
+   The thing a person does twenty times a call sits above the thing they do once.
+9. **A banner is its own little world.** Controls inside a banner take the *banner's* palette, never
+   the panel's — accent blue on the error red reads as two unrelated things. See the recipe in
+   `references/components.md`.
+
+`test/styles.test.ts` enforces the mechanical half of this: both theme blocks declare the same
+tokens, no literal colour lives outside them beyond the two documented quotes from Meet, and no
+Spanish leaks into a generated `content:` string. Run `pnpm test` after touching `styles.ts`.
 
 ## Working inside the shadow root
 
@@ -68,7 +80,13 @@ The interface talks like a person who understands the constraint and respects th
 - **Say what happens next, and offer the button.** "Chrome blocked autoplay in the YouTube tab. One
   click there is enough, and you come right back." + *Go activate it*.
 - **Explain the odd thing once, where it bites.** The music rides on the microphone track — so the
-  mic-muted banner explains why muting in Meet kills the music, and points at *Mute my voice*.
+  mic-muted banner explains why muting in Meet kills the music, and points at *Mute my voice*. The
+  blank state is the one place that explains the product at all; with music playing it disappears,
+  because the screen is already showing what the words would say.
+- **One line is written for strangers.** The chat announcement (`src/core/announce.ts`) is the only
+  copy addressed to people *without* the extension — everyone in the meeting reads it, in plain
+  text. It names the song, who is sharing it, and where to get Meet Music, in that order, in a
+  single line. Treat every character as expensive: it is a visible message in someone else's chat.
 - **Name the trade-off instead of hiding it.** Sharing the queue writes visible messages into the
   chat, and the settings copy says so.
 - **English for everything a user sees. Spanish only for code comments.** No exceptions in either
@@ -97,4 +115,6 @@ The interface talks like a person who understands the constraint and respects th
 - [ ] Icon-only controls have `aria-label`; toggles have `aria-pressed`.
 - [ ] Anything conditional actually disappears when it has nothing to say.
 - [ ] Any shared-state control is a stepper/explicit press, not a drag.
+- [ ] Controls inside a banner use the banner's palette, not the panel accent.
+- [ ] No backtick anywhere inside the `PANEL_CSS` template — one silently truncates the stylesheet.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` still pass.

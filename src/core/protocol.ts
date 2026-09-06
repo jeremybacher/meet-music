@@ -36,6 +36,8 @@ export type Msg =
   | { op: 'remove'; id: string; from: string }
   /** Cualquiera puede pasar de canción; no hay votación. */
   | { op: 'skip'; from: string }
+  /** Adelantar una canción concreta de la cola. Las salteadas quedan detrás, no se pierden. */
+  | { op: 'jump'; id: string; from: string }
   /** Pausar y reanudar también son de la reunión, no sólo de quien reproduce. */
   | { op: 'playback'; playing: boolean; from: string }
   /**
@@ -79,6 +81,7 @@ const isMsg = (v: unknown): v is Msg => {
     case 'add':
       return isTrack(m.track)
     case 'remove':
+    case 'jump':
       return typeof m.id === 'string'
     case 'skip':
     case 'stop':

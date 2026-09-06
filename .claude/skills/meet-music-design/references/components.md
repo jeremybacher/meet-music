@@ -20,7 +20,10 @@ bottom: 92px`.
 - `data-active="true"` → accent fill (the panel is broadcasting).
 - `data-muted="true"` → Meet's mute red. Takes precedence visually.
 - `.dot` is the 9px activity dot, top-right, ringed in the launcher background so it reads as
-  attached to the button.
+  attached to the button. `data-tone="live"` is Meet's activity green (*you* are broadcasting);
+  `data-tone="remote"` is `--accent` (music is playing, someone else is the DJ). Two different
+  facts, so two different colours — with the panel closed, the dot is the only thing that says
+  there is music in the meeting at all.
 - The mute launcher **only exists while music plays**. Without music, muting is Meet's own button's
   job and a second one would be a lie.
 
@@ -46,9 +49,10 @@ bottom: 92px`.
 <span class="badge" data-tone={live ? 'live' : undefined} title={tip}>{label}</span>
 ```
 
-Answers one question — *whose music is the meeting hearing?* Three states: `On air` (with
-`data-tone="live"`), `DJ: <name>`, `No music`. The tooltip always says the same thing in a full
-sentence.
+Answers one question — *whose music is the meeting hearing?* Four states: `On air`
+(`data-tone="live"`), `Not on air` (`data-tone="warn"` — the graph is up but no Meet sender carries
+the mix, so nobody hears it yet), `DJ: <name>`, `No music`. The tooltip always says the same thing
+in a full sentence.
 
 ## Banners
 
@@ -59,9 +63,17 @@ sentence.
 </div>
 ```
 
+- All banners live inside one `.banners` wrapper, which carries `role="status" aria-live="polite"`
+  and collapses to nothing when empty (`.banners:empty`). Banners appear without anyone pressing
+  anything, so a screen reader has no other way to learn about them.
 - Tones: `warn`, `error`, `info`. Each maps to its `--*-bg` / `--*-text` pair.
+- **Controls inside a banner use the banner's palette.** `.banner .action` inherits the banner text
+  colour with a `currentColor` border; `data-primary="true"` fills with `--bg`/`--text` so it reads
+  as raised on any of the three tinted grounds. `.banner .hint` inherits too, at `opacity: .78`.
+  Never let the panel accent sit on the error red.
 - A banner that states a problem **carries the button that fixes it**. A banner with no action is a
-  dead end.
+  dead end. One problem gets one banner: the capture failure and its fallback are the same problem,
+  so *Try again* and *Share the tab by hand* sit in one card, not two.
 - Banners are conditional. There is no success banner: working audio has nothing to report.
 - Two side-by-side choices go in a nested `.controls` with `style="margin-top:10px"`, the
   recommended one `data-primary="true"`.
@@ -80,6 +92,11 @@ sentence.
 - `disabled` drops opacity to `.38` and must be paired with a `title` explaining why.
 - Inline icons render at 18px with `vertical-align:-4px;margin-right:6px` (that is what `<Icon>`
   does without `standalone`).
+- `data-icon="true"` — a 46px square icon-only pill for a form row (the add-song `+`). `flex: none`,
+  22px glyph centred.
+- `data-quiet="true"` — borderless, `--text-dim`, weight 400. For a destructive, low-frequency
+  action that must be findable but must not compete: *Stop and clear queue*. Loudness follows how
+  often you want it pressed, not how much it does.
 
 ## Now playing
 
@@ -112,7 +129,43 @@ Never swap one for the other without changing who the control affects.
 attribution, `.dur` in tabular nums, and a `.icon-btn` `✕` to remove. The section title carries the
 count and the rule: `Queue (3) · anyone can add or skip`.
 
-Empty state is a `.empty` line that says what to do next: "Empty. Paste a YouTube video link above."
+The list is **not rendered at all** when empty — the blank state (`.stage`) already says what to do
+next, and a second empty line under it says it twice.
+
+Each row carries two `.icon-btn`s at 32px (not the header's 36px): a `PLAY` glyph that jumps
+straight to that song, and `✕` to remove. Both name the song in their `aria-label` and `title`, so
+"Remove" is never ambiguous in a list of ten.
+
+## Blank state and grouping
+
+```jsx
+<div class="stage">
+  <div class="stage-title">Play music for the whole meeting</div>
+  <div class="hint">Paste a YouTube link and the audio is mixed into your microphone…</div>
+</div>
+```
+
+`.stage` is the only place the product explains itself, and it exists **only** when nothing is
+playing and the queue is empty. The moment there is a song, it goes away.
+
+`.group` is a `--bg-sunken` card at 12px radius holding a block of related controls (the three
+sliders, or the shared stepper). It separates without a hard border, the way Meet groups inside its
+own panels.
+
+`.footer` is a `--border` hairline, then the channel status line and the exit. It sits last because
+it is what you touch least.
+
+## Spinner
+
+```jsx
+{view.resolving ? <span class="spinner" aria-hidden="true" /> : <Icon path={ADD} standalone />}
+```
+
+A 16px `currentColor` ring, so it takes the colour of whatever button it sits in. It is the panel's
+only animation beyond the launcher transition, and it is there because a pasted link takes about a
+second to resolve its title — a second of no feedback reads as "this is broken". Honours
+`prefers-reduced-motion` by slowing to 2.4s rather than stopping, since a frozen spinner is worse
+than a slow one.
 
 ## Form row
 

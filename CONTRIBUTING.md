@@ -29,15 +29,27 @@ with **two Google accounts** in a real meeting (or one normal and one incognito)
 If you touched audio or the transport, check at least this:
 
 1. The other account hears the music.
-2. With music playing, sweep "Music in the meeting" from 0 to 100 while talking: **your voice volume
+2. **Start the music alone, and have the second account join afterwards.** They must hear it without
+   anyone leaving and rejoining. This is the case that used to fail: Meet renegotiates when someone
+   joins, and the new sender came up with the raw microphone track. Do the reverse order too.
+3. Leave and rejoin with the second account a couple of times while the music keeps playing.
+4. With music playing, sweep "Music in the meeting" from 0 to 100 while talking: **your voice volume
    must not change** and you must stay intelligible the whole way.
-3. Changing song does not cut the audio or leave the old title behind.
-4. *Mute my voice* silences you while the music keeps playing for everyone else.
-5. Adding a song from the second account shows up in the first account's queue.
+5. Changing song does not cut the audio or leave the old title behind.
+6. *Mute my voice* silences you while the music keeps playing for everyone else.
+7. Adding a song from the second account shows up in the first account's queue.
+8. The second account sees the queue **as soon as it joins**, without opening the chat by hand.
+9. The chat gets exactly **one** readable announcement per join, not one per participant, and none
+   at all when nobody joins.
+10. Share a tab with audio while music is playing: the shared tab's sound still reaches the meeting.
+11. Start the music with your microphone off in Meet: the badge says *Not on air*, and turning the
+    mic on brings the music in without pressing anything again.
 
-The panel carries diagnostics so you do not have to guess: the status line's tooltip says where the
-audio comes from, and the queue line's says `chat open · send button found · sent N · received N`.
-When something fails, those numbers say where it breaks.
+The panel carries diagnostics so you do not have to guess: the audio line's tooltip says where the
+audio comes from and **how many Meet senders are carrying the mix** (`senders carrying the mix: N`
+— zero while music plays means nobody hears it), and the footer's says
+`chat open · send button found · sent N · received N`. When something fails, those numbers say where
+it breaks.
 
 ## How this is meant to hold together
 
@@ -53,7 +65,10 @@ Four decisions worth knowing before touching the code:
   solo mode instead of falling over.
 - **The chat is an expensive channel.** Every message is a visible line for anyone without the
   extension. Before sending something new, ask whether it is needed and whether it should be
-  coalesced (see `LATEST_WINS` and the volume debounce).
+  coalesced (see `LATEST_WINS`, the volume debounce, and the 90-second floor on announcements).
+- **Whoever joins must be caught up without doing anything.** Meet renegotiates audio and remounts
+  the chat as people come and go; anything that is set up once, at the moment music starts, will be
+  wrong for the next person through the door. Reconcile, do not assume.
 
 ## Style
 

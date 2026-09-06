@@ -2,6 +2,9 @@
 
 ## Panel (inside Meet) — `src/content/styles.ts`
 
+The whole stylesheet is one template literal, so **a backtick anywhere inside it — a comment
+included — truncates it silently.** There is a test for that.
+
 Colours are CSS variables declared twice, on `.root[data-theme="light"]` and
 `.root[data-theme="dark"]`. `app.tsx` puts the resolved theme on the root div
 (`<div class="root" data-theme={view.theme}>`); `src/core/theme.ts` resolves `system` against
@@ -22,6 +25,7 @@ changing any of them** — this table is the map, that file is the source of tru
 | `--accent-hover` | Primary hover | `#0842a0` | `#c2ddff` |
 | `--accent-text` | Text on the accent fill | `#ffffff` | `#062e6f` |
 | `--live` / `--live-text` | "On air" badge | `#d3e3fd` / `#0842a0` | `#0b2a5b` / `#a8c7fa` |
+| `--bg-sunken` | Also: `.group` control cards | `#f8fafd` | `#131314` |
 | `--warn-bg` / `--warn-text` | Warning banner | `#fef7e0` / `#8f6100` | `#402d00` / `#fdd663` |
 | `--error-bg` / `--error-text` | Error banner | `#fce8e6` / `#a50e0e` | `#4d1f1c` / `#f2b8b5` |
 | `--info-bg` / `--info-text` | Info banner | `#e8f0fe` / `#0b57d0` | `#0b2a5b` / `#a8c7fa` |
@@ -36,6 +40,8 @@ changing any of them** — this table is the map, that file is the source of tru
 - `#34a853` — the activity dot on the launcher, Meet's own indicator green.
 
 Do not add a third literal unless it is likewise a direct quote of a Meet signal.
+`test/styles.test.ts` fails the build if you do — and also if a token is declared in one theme block
+and not the other, which would silently blank that colour in the other theme.
 
 ### Shape, type, spacing
 
@@ -49,8 +55,10 @@ Do not add a third literal unless it is likewise a direct quote of a Meet signal
   Header padding `16px 12px 12px 20px`, body `4px 20px 20px`.
 - **Geometry:** panel `width: 360px`, `max-height: min(76vh, 700px)`, anchored `right: 18px;
   bottom: 150px`. Dock at `bottom: 92px`, `gap: 10px`. `z-index: 2147483000`.
-- **Motion:** `transition: background-color .15s ease, color .15s ease` on the launcher, and the
-  progress track thickening on hover. That is the whole motion budget — no entrance animations.
+- **Motion:** `transition: background-color .15s ease, color .15s ease` on the launcher, the progress
+  track thickening on hover, and `.spinner` while a pasted link resolves. That is the whole motion
+  budget — no entrance animations, and nothing that moves without reporting work in progress.
+  `prefers-reduced-motion` slows the spinner to 2.4s instead of stopping it.
 
 ## Options page — `src/static/options.html`
 

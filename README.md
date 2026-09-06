@@ -48,8 +48,23 @@ outside a call.
 4. **Mute my voice** silences you without cutting the music. Meet's own mute button cannot do that,
    because music and voice travel as a single mixed track.
 
+Anyone can jump straight to a queued song with the ▶ next to it, and remove one with ✕. Both are
+requests that apply to the whole meeting.
+
 **Use headphones.** Through speakers your microphone picks the music back up and the meeting hears it
 twice, slightly out of sync.
+
+### Telling the meeting
+
+When someone joins while you are playing, the extension writes **one readable line** in the chat:
+
+> ♪ Meet Music · now playing "…" · Ana is sharing it through their microphone, so you hear it
+> without installing anything. Add songs to the queue with the extension: …
+
+It is the only message aimed at people who **do not** have the extension. Without it, walking into a
+meeting where music is already playing is walking into a sound with no visible source and no way to
+join in. At most one every 90 seconds, only while you are the one playing, and switchable in
+⚙ → *Tell the meeting what is playing*.
 
 ### Shared queue
 
@@ -83,7 +98,8 @@ None of these are bugs — they follow from injecting audio into the microphone.
   the volume while they last.
 - **Spotify is not possible** in this model: it plays under DRM, and protected audio cannot be
   captured.
-- **People without the extension see odd text in the chat** while the queue is shared.
+- **People without the extension see odd text in the chat** while the queue is shared. The one
+  message meant for them — the announcement above — is deliberately readable.
 - **If the player closes their tab without stopping**, everyone else keeps seeing them as the DJ until
   someone uses *Stop and clear queue*.
 - **Meet's DOM changes without notice.** If the chat transport breaks, the extension degrades to
@@ -125,8 +141,13 @@ extension (toolbar icon, shortcut, context menu), and a background player tab ne
 Two deliberate decisions about the voice:
 
 - **While there is no music, the extension touches nothing.** `getUserMedia` returns the microphone
-  untouched and no `AudioContext` is even created. When music starts, the mixer is built and the
-  track is swapped live with `RTCRtpSender.replaceTrack()`.
+  untouched, no `AudioContext` is created and not a single timer runs. When music starts, the mixer
+  is built and the track is swapped live with `RTCRtpSender.replaceTrack()`.
+- **While there is music, every outgoing audio sender is kept on the mix.** Swapping once is not
+  enough: when someone joins, Meet renegotiates — sometimes on a brand-new `RTCPeerConnection` — with
+  the raw microphone track. So `addTrack`, `addTransceiver` and `replaceTrack` are all intercepted,
+  and a reconciler re-checks every sender each second while music plays. Screen-share audio is
+  tracked separately and never touched.
 - **The voice passes through no processing node**, only a gain. The limiter hangs off the music
   branch. A test verifies that topology.
 
@@ -153,7 +174,7 @@ purpose: if identity were the name, two people on the default name would count a
 
 ```bash
 pnpm dev        # esbuild in watch mode
-pnpm test       # 61 tests
+pnpm test       # 87 tests
 pnpm typecheck
 pnpm build
 ```
@@ -172,6 +193,8 @@ by hand**, with two Google accounts in a real meeting.
 | `src/core/mixer.ts` | The Web Audio graph. Guarantees the music cannot touch the voice. |
 | `src/content/session.ts` | Panel state, roles, wiring. |
 | `src/content/chat-transport.ts` | Shared queue over the Meet chat, without clobbering your drafts. |
+| `src/content/meet-participants.ts` | Reads how many people are in the call, to notice someone joining. |
+| `src/core/announce.ts` | The one plain-text chat line, written for people without the extension. |
 | `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
 | `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |
 | `src/background/service-worker.ts` | YouTube tab and signalling relay. |

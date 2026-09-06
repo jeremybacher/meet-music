@@ -47,10 +47,26 @@ export type ToIsolated =
   | { type: 'signal'; signal: Signal }
   | { type: 'mic-attached' }
   | { type: 'music-attached' }
+  /**
+   * El grafo está armado pero Meet todavía no transmite audio, así que la reunión no escucha nada.
+   * No es un error: se resuelve solo en cuanto Meet empiece a mandar, y el reconciliador engancha
+   * la mezcla sin que haya que volver a apretar nada.
+   */
+  | { type: 'music-pending'; reason: string }
   | { type: 'music-failed'; error: string }
   /** Meet había quedado enviando una pista muerta y la repusimos. */
   | { type: 'outgoing-restored' }
-  | { type: 'status'; micActive: boolean; musicActive: boolean; ducking: boolean; levels: Levels }
+  | {
+      type: 'status'
+      micActive: boolean
+      musicActive: boolean
+      ducking: boolean
+      levels: Levels
+      /** Emisores de Meet que están llevando la mezcla. 0 con música puesta = nadie la escucha. */
+      outgoing: number
+      /** Emisores de audio que Meet tiene abiertos, lleven o no la mezcla. */
+      senders: number
+    }
 
 /** Panel (ISOLATED) → service worker. */
 export type PanelReq =
@@ -139,5 +155,11 @@ export interface Prefs {
    * reproduciendo; sin esto cada participante queda aislado.
    */
   shareQueue: boolean
+  /**
+   * Avisar por el chat, en texto legible, cuando entra alguien con la música ya sonando. Es el
+   * único mensaje de la extensión dirigido a quien NO la tiene instalada: sin él, llegar a una
+   * reunión con música es llegar a un sonido sin origen ni forma de participar.
+   */
+  announce: boolean
 }
 

@@ -8,6 +8,8 @@ export type Action =
   | { type: 'add'; track: Track }
   | { type: 'remove'; id: string }
   | { type: 'next' }
+  /** Saltar directo a una canción de la cola, sin pasar por las de antes. */
+  | { type: 'jump'; id: string }
   | { type: 'setPlaying'; playing: boolean }
   | { type: 'setVolume'; volume: number }
   /** El player nos contó el título/duración reales una vez que cargó el video. */
@@ -35,6 +37,16 @@ export const reduce = (state: StateSnapshot, action: Action): StateSnapshot => {
 
     case 'next':
       return advance(state)
+
+    case 'jump': {
+      const target = state.queue.find((t) => t.id === action.id)
+      // Ya está sonando, o alguien la sacó entre el clic y el mensaje: no hay nada que hacer.
+      if (!target) return state
+      // Las que se saltean no se descartan: quedan en la cola, detrás. Nadie pidió borrarlas, y
+      // perder canciones ajenas por adelantar la propia sería la peor forma de compartir una cola.
+      const rest = state.queue.filter((t) => t.id !== action.id)
+      return { ...state, current: target, queue: rest, playing: true }
+    }
 
     case 'setPlaying':
       return { ...state, playing: action.playing }

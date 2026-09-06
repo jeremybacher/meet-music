@@ -133,12 +133,7 @@ export class Mixer {
    * porque si Meet corta el track viejo no queremos que se lleve puesto al nuevo.
    */
   createMixedStream(realStream: MediaStream): MediaStream {
-    const audioTracks = realStream.getAudioTracks()
-    if (audioTracks.length > 0) {
-      this.micSource?.disconnect()
-      this.micSource = this.ctx.createMediaStreamSource(new MediaStream(audioTracks))
-      this.micSource.connect(this.micGain)
-    }
+    this.setMicSource(realStream)
 
     this.destinations = this.destinations.filter((d) => {
       const alive = d.stream.getAudioTracks().some((t) => t.readyState === 'live')
@@ -155,6 +150,22 @@ export class Mixer {
     this.startDuckLoop()
 
     return new MediaStream([...dest.stream.getAudioTracks(), ...realStream.getVideoTracks()])
+  }
+
+  /**
+   * (Re)conecta el micrófono a la rama de voz, **sin tocar los destinos**.
+   *
+   * Se llama aparte de `createMixedStream` porque el micrófono se puede morir solo —cambio de
+   * dispositivo, suspensión del equipo— mientras la pista mezclada sigue viva y silenciosa. En ese
+   * caso hay que reemplazar la fuente y nada más: crear un destino nuevo obligaría a repactar con
+   * Meet lo que ya está funcionando.
+   */
+  setMicSource(realStream: MediaStream): void {
+    const audioTracks = realStream.getAudioTracks()
+    if (audioTracks.length === 0) return
+    this.micSource?.disconnect()
+    this.micSource = this.ctx.createMediaStreamSource(new MediaStream(audioTracks))
+    this.micSource.connect(this.micGain)
   }
 
   /** Conecta el audio capturado de la player tab. */
