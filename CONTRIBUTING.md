@@ -22,9 +22,8 @@ That is exactly what CI runs — plus a check that `manifest.json` and `package.
 version, since they are bumped by hand and drift apart on their own.
 
 A second workflow, **Security**, runs on every PR and on its own every Monday: `pnpm audit` over
-what ships and over the build tooling, a dependency review that blocks a new vulnerable package
-before it lands, and CodeQL over the source. Nothing to run locally, but `pnpm audit` gives you the
-same answer as the first half of it.
+what ships and over the build tooling, and CodeQL over the source. Nothing to run locally, but
+`pnpm audit` gives you the same answer as the first half of it.
 
 ## Testing it for real
 

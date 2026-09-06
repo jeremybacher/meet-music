@@ -43,23 +43,11 @@ jobs:
       - name: Audit the build and test tooling
         run: pnpm audit --dev --audit-level high --ignore-registry-errors
 
-  dependency-review:
-    name: Dependency review
-    # Sólo en PRs, porque compara la rama contra main: frena la dependencia vulnerable antes
-    # de que entre, que es bastante más barato que sacarla después. También es el lugar donde
-    # se ve una licencia nueva, algo que el audit no mira.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: on-failure
+  # Falta acá un job de `actions/dependency-review-action`, que en un PR compara contra main y
+  # frena la dependencia vulnerable —o con una licencia nueva, que el audit no mira— antes de
+  # que entre. Necesita el Dependency graph encendido en Settings → Code security, y no se
+  # puede encender por API. Mientras esté apagado el job sólo puede fallar, así que no está:
+  # con el switch puesto son diez líneas.
 
   codeql:
     name: CodeQL

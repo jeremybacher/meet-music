@@ -185,5 +185,6 @@ the ready-to-install zip. CI verifies that the two versions match each other on 
 only way to get it wrong is the tag itself.
 
 A `Security` workflow runs on every PR and weekly: `pnpm audit` split in two (what ships is held to
-`moderate`, the build tooling to `high`), `dependency-review` on PRs, and CodeQL with
-`security-extended` over the TypeScript source.
+`moderate`, the build tooling to `high`) and CodeQL with `security-extended` over the TypeScript
+source. `dependency-review` is not there: it needs the repository's Dependency graph enabled, which
+it is not.
