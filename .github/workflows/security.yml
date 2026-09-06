@@ -1,9 +1,14 @@
 name: Security
 
-# Tres preguntas distintas: si lo que tenemos instalado tiene agujeros conocidos, si un PR
-# está sumando una dependencia que ya viene con uno, y si el código propio cae en un patrón
-# peligroso. La primera además corre sola: un lockfile limpio deja de estarlo sin que nadie
-# toque el repositorio, porque los avisos se publican después.
+# Dos preguntas distintas: si lo que tenemos instalado tiene agujeros conocidos, y si el código
+# propio cae en un patrón peligroso.
+#
+# Corre además sola los lunes, y ese es el disparador que hace el trabajo de verdad: `push` y
+# `pull_request` sólo contestan "¿lo que acabo de escribir trae algo malo?", pero los avisos se
+# publican después. Un lockfile limpio deja de estarlo sin que nadie toque el repositorio, y sin
+# la corrida semanal eso no se entera nadie hasta el próximo commit, sea cuando sea. Ojo con dos
+# detalles del cron: sólo corre en la rama por defecto, y GitHub lo desactiva tras 60 días sin
+# actividad en el repositorio.
 on:
   push:
     branches: [main]
