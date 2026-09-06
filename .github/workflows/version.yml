@@ -1,14 +1,20 @@
 name: Version
 
-# Versiona y publica sola, en cada merge a main. El número sale del tipo del cambio —el prefijo
-# convencional que ya usan las ramas y los commits de este repositorio— así que no hay que
-# acordarse de bumpear nada a mano antes de mergear.
+# Versiona y publica sola. El número sale del tipo del cambio —el prefijo convencional que ya usan
+# las ramas y los títulos de PR de este repositorio— así que no hay que acordarse de bumpear nada.
 #
 #   feat/…                                  → minor    1.0.0 → 1.1.0
 #   fix/… hotfix/… perf/…                   → patch    1.0.0 → 1.0.1
-#   un `!` o BREAKING CHANGE                → major    1.0.0 → 2.0.0
+#   un `!` o un footer BREAKING CHANGE      → major    1.0.0 → 2.0.0
 #   docs/ chore/ ci/ test/ refactor/ style/ → no se publica nada
+#
+# El bump se escribe **en la rama del PR**, no en main. Main está protegida y pide PR, y el bypass
+# por app no existe en repos personales; pero además así el número se ve en el diff antes de
+# mergear, en vez de aparecer después en un commit que nadie revisó. Al mergear, main ya trae la
+# versión y lo único que falta es el tag.
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -17,34 +23,26 @@ permissions:
 
 jobs:
   bump:
-    name: Work out the next version
+    name: Write the version into the PR
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # El commit que hace este workflow vuelve a caer en main. Los pushes hechos con GITHUB_TOKEN
-    # no disparan workflows, así que el bucle ya lo corta GitHub; la condición está igual, porque
-    # depender de eso sin decirlo es una trampa para quien lea esto dentro de un año.
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
-    outputs:
-      version: ${{ steps.next.outputs.version }}
-      release: ${{ steps.next.outputs.release }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      # El tipo sale de la rama del PR que se mergeó, que es lo que se nombra a conciencia. El
-      # asunto del commit es la red: en un push directo a main es lo único que hay, y cuando los
-      # dos hablan gana el más fuerte. La rama del último release decía `fix/` y el PR decía
-      # `feat:` — leyendo sólo la rama, eso se habría publicado como un parche.
+      # El tipo sale de la rama, que es lo que se nombra a conciencia, y del título del PR, que es
+      # lo que termina siendo el asunto del commit al hacer squash. Gana el más fuerte de los dos:
+      # la rama que publicó 1.0.0 era `fix/late-joiner-…` con un PR titulado `feat:`, y leyendo sólo
+      # la rama eso salía como parche.
       - name: Read the type of change
         id: type
         env:
-          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+          SUBJECT: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
         run: |
-          branch=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-            --jq '.[0].head.ref // empty' 2>/dev/null || true)
-          subject=$(git log -1 --pretty=%s)
-          body=$(git log -1 --pretty=%B)
-
           rank() {
             case "$1" in
               feat) echo 2 ;;
@@ -53,8 +51,8 @@ jobs:
             esac
           }
 
-          from_branch=$(printf '%s' "$branch" | sed -n 's|^\([a-z]*\)/.*|\1|p')
-          from_subject=$(printf '%s' "$subject" | sed -n 's|^\([a-z]*\)(\{0,1\}[^)]*)\{0,1\}!\{0,1\}:.*|\1|p')
+          from_branch=$(printf '%s' "$BRANCH" | sed -n 's|^\([a-z]*\)/.*|\1|p')
+          from_subject=$(printf '%s' "$SUBJECT" | sed -n 's|^\([a-z]*\)(\{0,1\}[^)]*)\{0,1\}!\{0,1\}:.*|\1|p')
 
           best=0
           for candidate in "$from_branch" "$from_subject"; do
@@ -62,14 +60,12 @@ jobs:
             if [ "$r" -gt "$best" ]; then best=$r; fi
           done
 
-          # Un `!` antes de los dos puntos, o BREAKING CHANGE en el cuerpo: la convención dice que
-          # eso rompe algo, y romper algo es un major sin importar el tipo que lo acompañe.
-          case "$subject" in
-            *'!:'*) best=3 ;;
-          esac
-          case "$body" in
-            *'BREAKING CHANGE'*) best=3 ;;
-          esac
+          # Un `!` antes de los dos puntos, o un footer BREAKING CHANGE. Los dos van anclados, y no
+          # por prolijidad: el PR que estrenó este workflow explicaba la regla en su propio cuerpo,
+          # la frase aparecía ahí escrita en prosa, y un `ci:` que no tenía que publicar nada se fue
+          # a v2.0.0. Hablar de la convención no es usarla.
+          if printf '%s' "$SUBJECT" | grep -qE '^[a-z]+(\([^)]*\))?!:'; then best=3; fi
+          if printf '%s' "$BODY" | grep -qE '^BREAKING[ -]CHANGE:'; then best=3; fi
 
           case "$best" in
             3) bump=major ;;
@@ -79,45 +75,55 @@ jobs:
           esac
 
           echo "bump=$bump" >> "$GITHUB_OUTPUT"
-          echo "::notice::$bump — branch '${branch:-none}', subject '$subject'"
+          echo "::notice::$bump — branch '${BRANCH:-none}', title '$SUBJECT'"
 
-      # El punto de partida es package.json y no el último tag: así un bump hecho a mano —el salto
-      # a 1.0.0, por ejemplo— se respeta en vez de quedar pisado por la cuenta automática.
+      # La cuenta arranca en el package.json de la rama base, nunca en el de la rama: si arrancara
+      # acá, cada corrida sumaría uno sobre la anterior y un PR con tres pushes terminaría en 1.3.0.
       - name: Work out the number
         id: next
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
           bump="${{ steps.type.outputs.bump }}"
           if [ "$bump" = "none" ]; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "write=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Nothing to release for this kind of change"
             exit 0
           fi
 
+          base=$(git show "origin/$BASE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
           current=$(node -p "require('./package.json').version")
-          version=$(node -e '
-            const [major, minor, patch] = process.argv[1].split(".").map(Number)
+
+          result=$(node -e '
+            const parse = (v) => {
+              const parts = v.split(".").map(Number)
+              if (parts.length !== 3 || parts.some(Number.isNaN)) throw new Error("bad version: " + v)
+              return parts
+            }
+            const [major, minor, patch] = parse(process.argv[1])
             const bump = process.argv[2]
-            if ([major, minor, patch].some(Number.isNaN)) throw new Error("bad version: " + process.argv[1])
-            const next =
+            const target =
               bump === "major" ? [major + 1, 0, 0] :
               bump === "minor" ? [major, minor + 1, 0] :
               [major, minor, patch + 1]
-            console.log(next.join("."))
-          ' "$current" "$bump")
 
-          if git rev-parse "v$version" >/dev/null 2>&1; then
-            echo "::error::v$version already exists — package.json says $current and that tag is taken"
-            exit 1
-          fi
+            // Se escribe sólo si la rama viene por debajo. Igual es la segunda corrida del mismo PR
+            // y no hay nada que hacer; por encima es una versión puesta a mano —quien escribió
+            // 2.0.0 quiso decir 2.0.0—, y pisarla con la cuenta sería discutirle.
+            const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+            console.log(`${target.join(".")} ${cmp(parse(process.argv[3]), target) < 0}`)
+          ' "$base" "$bump" "$current")
 
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "release=true" >> "$GITHUB_OUTPUT"
-          echo "::notice::$current → $version"
+          target="${result% *}"
+          write="${result#* }"
 
-      # Las dos versiones se escriben juntas, en el mismo commit, que es justo lo que CI verifica
-      # en cada PR. Sin esto seguirían siendo dos archivos que hay que acordarse de tocar de a par.
-      - name: Write the version and tag it
-        if: steps.next.outputs.release == 'true'
+          echo "version=$target" >> "$GITHUB_OUTPUT"
+          echo "write=$write" >> "$GITHUB_OUTPUT"
+          echo "::notice::base $base, this branch says $current, target $target (write: $write)"
+
+      # Las dos versiones se escriben juntas y en el mismo commit, que es lo que CI verifica.
+      - name: Write it into the branch
+        if: steps.next.outputs.write == 'true'
         env:
           VERSION: ${{ steps.next.outputs.version }}
         run: |
@@ -135,19 +141,60 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add package.json src/static/manifest.json
           git commit -m "chore(release): v$VERSION"
-          # Anotado, no liviano: `--follow-tags` sólo empuja los anotados, y así el commit y el
-          # tag viajan en un push único —si main se movió mientras tanto, no se publica la mitad.
-          git tag -a "v$VERSION" -m "v$VERSION"
-          git push origin HEAD:main --follow-tags
+          git push origin "HEAD:$GITHUB_HEAD_REF"
 
-  # El tag lo empuja GITHUB_TOKEN, y esos pushes no disparan workflows: si el release dependiera
-  # del trigger de tag se quedaría esperando para siempre. Por eso se lo llama desde acá.
+  # Al mergear, main ya trae el número. Lo único que falta es el tag, que la protección de rama sí
+  # deja crear: es la parte que no se puede hacer en el PR, porque el tag tiene que apuntar al
+  # commit de main que realmente se publica.
+  tag:
+    name: Tag what landed
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      release: ${{ steps.tag.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag it if it is not tagged
+        id: tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          manifest=$(node -p "require('./src/static/manifest.json').version")
+
+          if [ "$version" != "$manifest" ]; then
+            echo "::error::package.json is $version and the manifest is $manifest — not tagging a version that does not exist"
+            exit 1
+          fi
+
+          # Un merge que no cambió la versión —un docs, un chore, o cualquier cosa que ya estaba
+          # publicada— no tiene nada que etiquetar. Esta es la condición y no el tipo del cambio:
+          # el tipo ya se leyó en el PR, acá lo único que importa es si este número ya salió.
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$version is already tagged — nothing to publish"
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v$version" -m "v$version"
+          git push origin "v$version"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::tagged v$version"
+
+  # El tag lo empuja GITHUB_TOKEN, y esos pushes no disparan workflows: si el release dependiera del
+  # trigger de tag se quedaría esperando para siempre. Por eso se lo llama desde acá.
   release:
     name: Release
-    needs: bump
-    if: needs.bump.outputs.release == 'true'
+    needs: tag
+    if: needs.tag.outputs.release == 'true'
     uses: ./.github/workflows/release.yml
     permissions:
       contents: write
     with:
-      tag: v${{ needs.bump.outputs.version }}
+      tag: v${{ needs.tag.outputs.version }}
