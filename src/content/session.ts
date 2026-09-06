@@ -25,6 +25,13 @@ import { parseVideoId } from '../youtube/parse-url.js'
 import { type ResolvedTheme, type ThemePref, resolveTheme, watchSystemTheme } from '../core/theme.js'
 import { announcementText } from '../core/announce.js'
 import { watchParticipants } from './meet-participants.js'
+import {
+  type MicButtonBox,
+  boxOf,
+  findMicButton,
+  isMutedLabel,
+  sameBox,
+} from './meet-controls.js'
 
 /**
  * `waiting` es el estado que faltaba: el grafo está armado y la música suena para vos, pero Meet
@@ -47,6 +54,11 @@ export interface SessionView {
   ducking: boolean
   /** El micrófono silenciado desde Meet: corta todo, música incluida. */
   micMuted: boolean
+  /**
+   * Dónde está el botón de micrófono de Meet, para poder ocupar su lugar mientras suena música.
+   * `null` cuando no se lo encuentra o no está a la vista: ahí el nuestro vuelve al dock.
+   */
+  micButton: MicButtonBox | null
   /** Tu voz silenciada desde acá: la música sigue sonando para la reunión. */
   voiceMuted: boolean
   canBroadcast: boolean
@@ -111,6 +123,7 @@ export class Session {
     duck: { ...DEFAULT_DUCK },
     ducking: false,
     micMuted: false,
+    micButton: null,
     voiceMuted: false,
     canBroadcast: false,
     chatStuck: false,
@@ -145,6 +158,8 @@ export class Session {
   private lastAnnounceAt = 0
   /** Reintentos del `hello` inicial mientras el chat de Meet todavía no está disponible. */
   private helloTimer: ReturnType<typeof setTimeout> | null = null
+  /** El botón de micrófono de Meet, cacheado: buscarlo entre todos los botones cuesta. */
+  private micEl: HTMLElement | null = null
 
   async start(): Promise<void> {
     await this.loadPeerId()
@@ -214,8 +229,10 @@ export class Session {
       if (JSON.stringify(diag) !== JSON.stringify(this.view.chat)) this.patch({ chat: diag })
     }, 4000)
 
-    // El botón de mutear de Meet corta el track mezclado entero, música incluida.
-    setInterval(() => this.checkMicMuted(), 1500)
+    // El botón de mutear de Meet corta el track mezclado entero, música incluida. Además hay que
+    // seguirle la posición de cerca: el nuestro se dibuja encima y no puede ir un paso atrás.
+    setInterval(() => this.readMicButton(), 400)
+    window.addEventListener('resize', () => this.readMicButton())
     setInterval(() => toMain({ type: 'query-status' }), 400)
   }
 
@@ -851,21 +868,31 @@ export class Session {
     })
   }
 
-  /**
-   * Busca el botón de micrófono de Meet y lee si está silenciado.
+/**
+   * Lee el botón de micrófono de Meet: si está silenciado y dónde está dibujado.
    *
-   * Los patrones siguen siendo multilingües a propósito: la interfaz de la extensión está en
-   * inglés, pero la de Meet está en el idioma de la cuenta de quien la usa.
+   * El elemento se cachea porque encontrarlo obliga a recorrer todos los botones de la página, y
+   * esto corre varias veces por segundo. Meet lo reemplaza al cambiar de layout, así que se
+   * revalida por `isConnected` en vez de confiar para siempre.
    */
-  private checkMicMuted(): void {
-    const buttons = Array.from(document.querySelectorAll<HTMLElement>('[role="button"][aria-label], button[aria-label]'))
-    const mic = buttons.find((b) => /micr[oó]fono|microphone/i.test(b.getAttribute('aria-label') ?? ''))
-    if (!mic) return
-    const pressed = mic.getAttribute('aria-pressed') ?? mic.getAttribute('data-is-muted')
-    const label = mic.getAttribute('aria-label') ?? ''
-    // Meet alterna el label entre "Activar micrófono" y "Silenciar micrófono".
-    const muted = pressed === 'true' || /activar|unmute|turn on/i.test(label)
+  private readMicButton(): void {
+    if (!this.micEl?.isConnected) this.micEl = findMicButton()
+    const mic = this.micEl
+    if (!mic) {
+      if (this.view.micButton !== null) this.patch({ micButton: null })
+      return
+    }
+
+    const muted = isMutedLabel(
+      mic.getAttribute('aria-label') ?? '',
+      mic.getAttribute('aria-pressed') ?? mic.getAttribute('data-is-muted'),
+    )
     if (muted !== this.view.micMuted) this.patch({ micMuted: muted })
+
+    // Medir sólo cuando vamos a tapar algo. Sin música el botón de Meet es el botón correcto y no
+    // hay nada que dibujar encima, así que tampoco hay motivo para estar midiéndolo.
+    const box = this.view.audio === 'on' ? boxOf(mic) : null
+    if (!sameBox(box, this.view.micButton)) this.patch({ micButton: box })
   }
 
   // ---------------------------------------------------------------- prefs

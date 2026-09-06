@@ -100,6 +100,19 @@ export const PANEL_CSS = `
 .launcher[data-muted="true"] { background: #ea4335; color: #ffffff; }
 .launcher[data-muted="true"]:hover { background: #d33426; }
 
+/*
+ * El botón que ocupa el lugar del de micrófono de Meet. La geometría y los colores llegan inline,
+ * medidos del botón que tapa: es la única forma de que coincida con el tema de Meet, que no tiene
+ * por qué ser el que el usuario eligió para el panel.
+ *
+ * Sin sombra: los botones de la barra de Meet no la tienen, y una lo delataría como pegado encima.
+ * El ícono va en proporción, no en píxeles fijos, porque esa barra se achica con la ventana.
+ */
+.launcher[data-overlay="true"] {
+  position: fixed; z-index: 2147483000; box-shadow: none;
+}
+.launcher[data-overlay="true"] svg { width: 50%; height: 50%; }
+
 /* Punto de "sonando", como el indicador de actividad de los controles de Meet. */
 .launcher .dot {
   position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%;

@@ -19,7 +19,7 @@ corepack enable          # this project uses pnpm (packageManager is pinned)
 pnpm install
 pnpm dev                 # esbuild watch → dist/
 pnpm build               # production bundle → dist/
-pnpm test                # vitest, 87 tests
+pnpm test                # vitest, 93 tests
 pnpm typecheck           # tsc --noEmit
 ```
 
@@ -128,6 +128,7 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
 | `src/content/styles.ts` | The panel's CSS, as a string (shadow root). |
 | `src/content/meet-url.ts` | In a call or not; the meeting code. |
 | `src/content/meet-identity.ts` | Display name, read from Meet's account button. |
+| `src/content/meet-controls.ts` | Meet's mic button: muted or not, and where it is drawn so ours can take its place. |
 | `src/core/mixer.ts` | The Web Audio graph. Guarantees the music cannot touch the voice. |
 | `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
 | `src/core/wire.ts` | Wire format: `[mm1] base64url(iv‖ciphertext)`, one line. |

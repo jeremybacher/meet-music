@@ -45,8 +45,11 @@ outside a call.
 3. **Set the volume.** Whoever is playing gets three independent knobs — music in the meeting, music
    just for them, and their own voice. Everyone else gets up and down buttons, which change the
    volume for the whole meeting.
-4. **Mute my voice** silences you without cutting the music. Meet's own mute button cannot do that,
-   because music and voice travel as a single mixed track.
+4. **The mic button silences you without cutting the music.** While you are playing, Meet Music
+   takes over Meet's own microphone button — same place, same look — because Meet's would cut the
+   music too, and two mic buttons side by side is a worse answer than one that does the right
+   thing. It hands the button back the moment the music stops, or if you mute yourself in Meet
+   (only Meet's own button can give the microphone back).
 
 Anyone can jump straight to a queued song with the ▶ next to it, and remove one with ✕. Both are
 requests that apply to the whole meeting.
@@ -91,7 +94,8 @@ None of these are bugs — they follow from injecting audio into the microphone.
 - **Music sounds worse than the original.** Meet encodes the microphone track for speech. That is the
   price of nobody else having to install anything.
 - **Muting yourself with Meet's button also cuts the music**, because it is a single track. That is
-  what *Mute my voice* is for.
+  why the extension takes that button over while you are playing. If Meet's controls move somewhere
+  the extension cannot find, the button falls back to its own spot next to the panel launcher.
 - **Volume cannot be per-person.** Listeners get the music fused with the player's voice; turning it
   down would turn their voice down too.
 - **YouTube ads.** Without Premium they play into the meeting. The extension detects them and lowers
@@ -174,7 +178,7 @@ purpose: if identity were the name, two people on the default name would count a
 
 ```bash
 pnpm dev        # esbuild in watch mode
-pnpm test       # 87 tests
+pnpm test       # 93 tests
 pnpm typecheck
 pnpm build
 ```
@@ -194,6 +198,7 @@ by hand**, with two Google accounts in a real meeting.
 | `src/content/session.ts` | Panel state, roles, wiring. |
 | `src/content/chat-transport.ts` | Shared queue over the Meet chat, without clobbering your drafts. |
 | `src/content/meet-participants.ts` | Reads how many people are in the call, to notice someone joining. |
+| `src/content/meet-controls.ts` | Meet's mic button: its state, and where it is so ours can take its place. |
 | `src/core/announce.ts` | The one plain-text chat line, written for people without the extension. |
 | `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
 | `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |

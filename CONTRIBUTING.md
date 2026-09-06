@@ -44,6 +44,10 @@ If you touched audio or the transport, check at least this:
 10. Share a tab with audio while music is playing: the shared tab's sound still reaches the meeting.
 11. Start the music with your microphone off in Meet: the badge says *Not on air*, and turning the
     mic on brings the music in without pressing anything again.
+12. With music playing, there is **one** mic button, in Meet's own control bar, and pressing it
+    silences you without cutting the music. Resize the window and go full screen: it stays glued to
+    Meet's button. Mute yourself with Meet's keyboard shortcut and the button goes back to being
+    Meet's, so you can unmute.
 
 The panel carries diagnostics so you do not have to guess: the audio line's tooltip says where the
 audio comes from and **how many Meet senders are carrying the mix** (`senders carrying the mix: N`

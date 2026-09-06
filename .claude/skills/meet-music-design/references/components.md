@@ -27,6 +27,32 @@ bottom: 92px`.
 - The mute launcher **only exists while music plays**. Without music, muting is Meet's own button's
   job and a second one would be a lie.
 
+### The mute button takes over Meet's mic button
+
+While music is on air and you are not muted in Meet, the mute-voice button is not in the dock at
+all: it is drawn **exactly on top of Meet's own mic button**, measured from it every 400ms.
+
+```jsx
+<button class="launcher" data-overlay="true" data-muted={String(muted)}
+        style={`top:${box.top}px;left:${box.left}px;width:${box.width}px;height:${box.height}px;` +
+               `background:${box.bg};color:${box.fg};`} />
+```
+
+- `position: fixed`, `z-index` and the removed shadow live in the stylesheet; the inline style
+  carries **only measurements** — geometry and the colours copied off the button underneath.
+- The colours come from `getComputedStyle` on Meet's button, not from our tokens: Meet has its own
+  theme and it need not be the one the user picked for the panel. Muted overrides both with Meet's
+  red, because that signal must survive.
+- The glyph is sized at `50%` of the button, not a fixed 24px — that bar shrinks with the window.
+- **Cover, never hide.** Meet's button stays in the DOM and working, so a mispositioned or missing
+  overlay degrades to "Meet's button is still there" rather than "there is no mic button".
+- It steps aside whenever Meet's own button is the one you need — when you are muted in Meet, only
+  Meet's button can give the microphone back.
+
+The reason is not tidiness: with music playing, Meet's mic button silences you *and* the music, and
+a second mic button beside it turns the fastest control in the call into a question. One button, in
+the place it has always been, doing what the moment calls for.
+
 ## Panel shell
 
 ```jsx

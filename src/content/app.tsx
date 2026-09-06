@@ -11,6 +11,7 @@ import { formatDuration } from '../youtube/parse-url.js'
 import type { Track } from '../core/protocol.js'
 import type { ThemePref } from '../core/theme.js'
 import { isCallUrl, watchCallState } from './meet-url.js'
+import type { MicButtonBox } from './meet-controls.js'
 
 const BRAND = 'Meet Music'
 
@@ -58,26 +59,22 @@ export function App() {
   const live = view.audio === 'on'
   const remote = view.hostName !== null && !view.isHost
 
+  /**
+   * Ocupamos el lugar del botón de micrófono de Meet, pero sólo mientras apretarlo cortaría la
+   * música. Si estás silenciado en Meet, el botón que necesitás es el de Meet —es el único que te
+   * devuelve el micrófono— así que le dejamos su lugar y el nuestro vuelve al dock.
+   */
+  const overlay = live && !view.micMuted ? view.micButton : null
+
   return (
     <div class="root" data-theme={view.theme}>
+      {overlay && <MuteVoiceButton view={view} session={session} box={overlay} />}
+
       <div class="dock">
-        {/* Sólo aparece con música puesta: sin ella, mutear la voz es cosa del botón de Meet. */}
-        {live && (
-          <button
-            class="launcher"
-            data-muted={String(view.voiceMuted)}
-            title={
-              view.voiceMuted
-                ? 'Your voice is muted — the music keeps playing for the meeting'
-                : 'Mute your voice without cutting the music'
-            }
-            aria-label={view.voiceMuted ? 'Unmute your voice' : 'Mute your voice'}
-            aria-pressed={view.voiceMuted}
-            onClick={() => session.toggleVoice()}
-          >
-            <Icon path={view.voiceMuted ? MIC_OFF : MIC} standalone />
-          </button>
-        )}
+        {/* Sin música, mutear la voz es cosa del botón de Meet y un segundo botón sería una
+            mentira. Con música pero sin poder tapar el de Meet, éste es el único que hace lo
+            correcto: mejor acá que en ningún lado. */}
+        {live && !overlay && <MuteVoiceButton view={view} session={session} />}
 
         <button
           class="launcher"
@@ -133,6 +130,52 @@ export function App() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Callarte sin cortar la música.
+ *
+ * Con `box` se dibuja exactamente encima del botón de micrófono de Meet, copiándole el tamaño y los
+ * colores —Meet tiene su propio tema, que no tiene por qué ser el que elegiste para el panel— para
+ * que sea *el* botón de micrófono y no uno más al lado. Sin `box` vive en el dock, que es la
+ * degradación cuando no se lo encuentra.
+ */
+function MuteVoiceButton({
+  view,
+  session,
+  box,
+}: {
+  view: SessionView
+  session: Session
+  box?: MicButtonBox
+}) {
+  const muted = view.voiceMuted
+  // Silenciado manda el rojo de Meet; taparlo con el color del botón de abajo perdería la señal.
+  const skin = muted ? '' : `${box?.bg ? `background:${box.bg};` : ''}${box?.fg ? `color:${box.fg};` : ''}`
+  const geometry = box
+    ? `top:${box.top}px;left:${box.left}px;width:${box.width}px;height:${box.height}px;${skin}`
+    : undefined
+
+  const title = muted
+    ? 'Your voice is muted — the music keeps playing for the meeting. Click to speak again.'
+    : box
+      ? 'Mute your voice — the music keeps playing. While music is on this takes over Meet\u2019s mic button, which would cut the music too.'
+      : 'Mute your voice without cutting the music'
+
+  return (
+    <button
+      class="launcher"
+      data-muted={String(muted)}
+      data-overlay={box ? 'true' : undefined}
+      style={geometry}
+      title={title}
+      aria-label={muted ? 'Unmute your voice' : 'Mute your voice, keeping the music playing'}
+      aria-pressed={muted}
+      onClick={() => session.toggleVoice()}
+    >
+      <Icon path={muted ? MIC_OFF : MIC} standalone />
+    </button>
   )
 }
 
@@ -383,9 +426,9 @@ function Banners({ view, session }: { view: SessionView; session: Session }) {
 
       {view.micMuted && view.audio === 'on' && (
         <div class="banner" data-tone="warn">
-          Your mic is muted in Meet. The music rides on your microphone track, so while you're
-          muted nobody hears it. Unmute in Meet and use <strong>Mute my voice</strong> here instead —
-          that one silences you and keeps the music going.
+          <strong>Your mic is muted in Meet, so nobody hears the music either.</strong> It rides on
+          your microphone track, so Meet's mute cuts both. Unmute there — while music is playing,
+          that button becomes {BRAND}'s and silences only your voice.
         </div>
       )}
 

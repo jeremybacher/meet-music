@@ -51,7 +51,11 @@ Panel tokens, options-page tokens, and every component recipe live in
 8. **Order the panel by frequency, not by architecture.** Top to bottom: what went wrong, what is
    playing, the one main action, how to add, what is next, and only then the knobs and the exit.
    The thing a person does twenty times a call sits above the thing they do once.
-9. **A banner is its own little world.** Controls inside a banner take the *banner's* palette, never
+9. **Where a control belongs beats how nice it looks.** Two buttons for one job is worse than a
+   button in someone else's chrome: while music plays, the mute-voice button *is* Meet's mic button,
+   drawn on top of it and wearing its colours. Cover, never hide — if our overlay fails, the real
+   control must still be there.
+10. **A banner is its own little world.** Controls inside a banner take the *banner's* palette, never
    the panel's — accent blue on the error red reads as two unrelated things. See the recipe in
    `references/components.md`.
 
