@@ -178,7 +178,7 @@ are there so failures can be located instead of guessed.
 ## Releasing
 
 1. Bump `version` in **both** `src/static/manifest.json` and `package.json`.
-2. `git tag v0.2.0 && git push --tags`.
+2. `git tag v1.0.0 && git push --tags`.
 
 The release workflow builds, tests, **verifies the tag matches the manifest version** and publishes
 the ready-to-install zip. CI verifies that the two versions match each other on every PR, so the

@@ -107,7 +107,7 @@ For audio issues, include:
 ## Cutting a release
 
 1. Bump `version` in `src/static/manifest.json` and `package.json`.
-2. Tag it: `git tag v0.2.0 && git push --tags`.
+2. Tag it: `git tag v1.0.0 && git push --tags`.
 
 The release workflow builds, runs the tests, **checks that the tag matches the manifest version** and
 publishes the ready-to-install zip. CI has already checked that the manifest and the package agree,
