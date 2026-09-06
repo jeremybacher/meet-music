@@ -177,25 +177,27 @@ are there so failures can be located instead of guessed.
 
 ## Releasing
 
-**Merging to main is the release.** The `Version` workflow reads the type of the change — the
-conventional prefix of the merged PR's branch, and the subject of the squashed commit, whichever of
-the two is stronger — and takes it from there:
+**The PR carries the version and merging publishes it.** The `Version` workflow reads the type of
+the change — the conventional prefix of the branch, and of the PR title, whichever of the two is
+stronger — and takes it from there:
 
 | Type | Bump | Example |
 |---|---|---|
 | `feat` | minor | 1.0.0 → 1.1.0 |
 | `fix`, `hotfix`, `perf` | patch | 1.0.0 → 1.0.1 |
-| `!` in the subject, or `BREAKING CHANGE` in the body | major | 1.0.0 → 2.0.0 |
+| `!` in the title, or a `BREAKING CHANGE:` footer | major | 1.0.0 → 2.0.0 |
 | `docs`, `chore`, `ci`, `test`, `refactor`, `style` | none | nothing is published |
 
-It writes both `version` fields, commits `chore(release): vX.Y.Z`, tags it, and calls the release
-workflow, which builds, tests, **verifies the tag matches the manifest version** and publishes the
-ready-to-install zip. So the branch prefix is not cosmetic any more: it decides the number.
+It writes both `version` fields into **the PR's own branch** as `chore(release): vX.Y.Z`, so the
+number is visible in the diff before merging. On merge, a second job tags what landed and calls the
+release, which builds, tests, verifies the tag matches the manifest and publishes the zip.
 
-The counting starts from `package.json`, not from the last tag, so bumping by hand still works —
-edit both files in the PR and the automation carries on from there. To publish something that was
-never merged, `git push --tags` on a `v*` tag, or run the release workflow from Actions with the tag
-as its input.
+The branch prefix is not cosmetic any more: it decides the number. And after the bot pushes, the
+branch is ahead — pull before continuing on it.
+
+The count starts from `package.json` on the base branch, and a version at or above the computed one
+is left alone, so writing the number by hand in the PR still wins. To publish something that was
+never merged, push a `v*` tag or run the release workflow from Actions with the tag as its input.
 
 A `Security` workflow runs on every PR and weekly: `pnpm audit` split in two (what ships is held to
 `moderate`, the build tooling to `high`) and CodeQL with `security-extended` over the TypeScript
