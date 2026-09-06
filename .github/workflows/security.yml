@@ -1,0 +1,86 @@
+name: Security
+
+# Tres preguntas distintas: si lo que tenemos instalado tiene agujeros conocidos, si un PR
+# está sumando una dependencia que ya viene con uno, y si el código propio cae en un patrón
+# peligroso. La primera además corre sola: un lockfile limpio deja de estarlo sin que nadie
+# toque el repositorio, porque los avisos se publican después.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Lo que viaja adentro del zip que la gente instala y corre en su navegador, dentro de
+      # su reunión. Hoy es una sola dependencia, así que el umbral puede ser bajo: cualquier
+      # aviso acá merece leerse antes de publicar.
+      - name: Audit what ships
+        run: pnpm audit --prod --audit-level moderate --ignore-registry-errors
+
+      # esbuild, tsc y vitest no llegan al navegador de nadie. Importan igual —compilan el
+      # zip que se firma— pero el umbral es el de lo grave, para que un aviso menor en una
+      # dependencia de test no frene un fix.
+      - name: Audit the build and test tooling
+        run: pnpm audit --dev --audit-level high --ignore-registry-errors
+
+  dependency-review:
+    name: Dependency review
+    # Sólo en PRs, porque compara la rama contra main: frena la dependencia vulnerable antes
+    # de que entre, que es bastante más barato que sacarla después. También es el lugar donde
+    # se ve una licencia nueva, algo que el audit no mira.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin paso de build a propósito: CodeQL lee el fuente en TypeScript. Analizar el bundle
+      # de esbuild sería analizar código minificado y con preact adentro, que es ruido.
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # La extensión inyecta en el DOM de Meet, parsea lo que llega por el chat y maneja
+          # claves: las consultas extendidas cubren justo eso (XSS por DOM, expresiones
+          # regulares que se pueden hacer explotar, criptografía mal usada).
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

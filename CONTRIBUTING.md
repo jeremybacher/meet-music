@@ -18,7 +18,13 @@ Before opening a PR:
 pnpm typecheck && pnpm test && pnpm build
 ```
 
-That is exactly what CI runs.
+That is exactly what CI runs — plus a check that `manifest.json` and `package.json` agree on the
+version, since they are bumped by hand and drift apart on their own.
+
+A second workflow, **Security**, runs on every PR and on its own every Monday: `pnpm audit` over
+what ships and over the build tooling, a dependency review that blocks a new vulnerable package
+before it lands, and CodeQL over the source. Nothing to run locally, but `pnpm audit` gives you the
+same answer as the first half of it.
 
 ## Testing it for real
 
@@ -105,4 +111,5 @@ For audio issues, include:
 2. Tag it: `git tag v0.2.0 && git push --tags`.
 
 The release workflow builds, runs the tests, **checks that the tag matches the manifest version** and
-publishes the ready-to-install zip.
+publishes the ready-to-install zip. CI has already checked that the manifest and the package agree,
+so the tag is the only thing left to get right.

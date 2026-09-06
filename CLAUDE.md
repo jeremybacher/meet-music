@@ -181,4 +181,9 @@ are there so failures can be located instead of guessed.
 2. `git tag v0.2.0 && git push --tags`.
 
 The release workflow builds, tests, **verifies the tag matches the manifest version** and publishes
-the ready-to-install zip.
+the ready-to-install zip. CI verifies that the two versions match each other on every PR, so the
+only way to get it wrong is the tag itself.
+
+A `Security` workflow runs on every PR and weekly: `pnpm audit` split in two (what ships is held to
+`moderate`, the build tooling to `high`), `dependency-review` on PRs, and CodeQL with
+`security-extended` over the TypeScript source.
