@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { Session, type SessionView } from './session.js'
+import type { LinkProblem } from '../youtube/parse-url.js'
 import { formatDuration } from '../youtube/parse-url.js'
 import type { Track } from '../core/protocol.js'
 import type { ThemePref } from '../core/theme.js'
@@ -583,6 +584,7 @@ function AddSong({
   autoFocus?: boolean
 }) {
   const [input, setInput] = useState('')
+  const [problem, setProblem] = useState<LinkProblem | null>(null)
   const field = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -591,39 +593,78 @@ function AddSong({
 
   const submit = (e: Event) => {
     e.preventDefault()
-    void session.submit(input).then((accepted) => {
-      // El campo se vacía sólo si el link se entendió: si no, queda para poder corregirlo.
-      if (accepted) setInput('')
-      field.current?.focus()
-    })
+    const result = session.submit(input)
+    // El campo se vacía sólo si el link se entendió: si no, queda tal cual para poder corregirlo,
+    // marcado y con el motivo debajo.
+    if (result.ok) {
+      setInput('')
+      setProblem(null)
+    } else {
+      setProblem(result.problem)
+    }
+    field.current?.focus()
   }
 
   const remote = view.hostName !== null && !view.isHost
   const empty = input.trim().length === 0
+  const invalid = problem !== null
 
   return (
-    <form class="row" onSubmit={submit}>
-      <input
-        ref={field}
-        type="text"
-        aria-label="YouTube video link"
-        placeholder={remote ? 'Add a song to the queue' : 'Paste a YouTube video link'}
-        value={input}
-        onInput={(e) => setInput((e.target as HTMLInputElement).value)}
-      />
-      <button
-        class="action"
-        data-primary="true"
-        data-icon="true"
-        type="submit"
-        disabled={empty || view.resolving}
-        aria-label="Add to queue"
-        title={empty ? 'Paste a YouTube link first' : 'Add to queue'}
-      >
-        {view.resolving ? <span class="spinner" aria-hidden="true" /> : <Icon path={ADD} standalone />}
-      </button>
+    <form class="add" onSubmit={submit} noValidate>
+      <div class="row">
+        <input
+          ref={field}
+          type="text"
+          aria-label="YouTube video link"
+          aria-invalid={invalid}
+          aria-describedby={invalid ? 'mm-link-error' : undefined}
+          data-invalid={String(invalid)}
+          placeholder={remote ? 'Add a song to the queue' : 'Paste a YouTube video link'}
+          value={input}
+          // El error se va al primer cambio: seguir marcando en rojo lo que ya se está corrigiendo
+          // es discutirle a alguien que ya te dio la razón.
+          onInput={(e) => {
+            setInput((e.target as HTMLInputElement).value)
+            if (problem) setProblem(null)
+          }}
+        />
+        <button
+          class="action"
+          data-primary="true"
+          data-icon="true"
+          type="submit"
+          disabled={empty || view.resolving}
+          aria-label="Add to queue"
+          title={empty ? 'Paste a YouTube link first' : 'Add to queue'}
+        >
+          {view.resolving ? <span class="spinner" aria-hidden="true" /> : <Icon path={ADD} standalone />}
+        </button>
+      </div>
+
+      {problem && (
+        <div class="field-error" id="mm-link-error" role="alert">
+          {linkProblemText(problem)}
+        </div>
+      )}
     </form>
   )
+}
+
+/**
+ * Qué decirle a quien pegó algo que no sirve.
+ *
+ * Un "link inválido" genérico deja a la persona exactamente donde estaba. Cada caso tiene un
+ * siguiente paso distinto, y decirlo es la diferencia entre un error y una ayuda.
+ */
+const linkProblemText = (problem: LinkProblem): string => {
+  switch (problem.reason) {
+    case 'no-video':
+      return 'That is a YouTube link, but not to a video. Playlists, channels and search results do not work yet — open the video itself and copy the address from there.'
+    case 'other-service':
+      return `${BRAND} can only play YouTube. Look the song up on YouTube and paste that link instead of the ${problem.service} one.`
+    default:
+      return 'That does not look like a YouTube link. Copy a video address from YouTube — it looks like youtube.com/watch?v=… or youtu.be/…'
+  }
 }
 
 /**

@@ -21,7 +21,7 @@ import { deriveKey } from '../core/crypto.js'
 import { meetingCode } from './meet-url.js'
 import { detectDisplayName } from './meet-identity.js'
 import { onMain, toMain } from './bridge.js'
-import { parseVideoId } from '../youtube/parse-url.js'
+import { type LinkProblem, parseLink } from '../youtube/parse-url.js'
 import { type ResolvedTheme, type ThemePref, resolveTheme, watchSystemTheme } from '../core/theme.js'
 import { announcementText } from '../core/announce.js'
 import {
@@ -43,6 +43,9 @@ import {
  * solo— pero callarlo dejaba al DJ creyendo que estaba al aire.
  */
 export type AudioStatus = 'off' | 'starting' | 'waiting' | 'on' | 'error'
+
+/** Lo que devuelve `submit`, para que el campo pueda marcarse a sí mismo. */
+export type SubmitResult = { ok: true } | { ok: false; problem: LinkProblem }
 
 export interface SessionView {
   audio: AudioStatus
@@ -466,25 +469,22 @@ export class Session {
   /**
    * Acepta una URL de YouTube o un id suelto. En esta versión no hay búsqueda por nombre.
    *
-   * Devuelve si el texto se entendió, para que el campo se vacíe sólo cuando la canción salió de
-   * viaje. Vaciarlo ante un link que no se entiende borra lo que la persona acaba de pegar.
+   * Devuelve qué pasó en vez de avisar por su cuenta. Un texto que no se entiende es un error **del
+   * campo**: tiene que quedar marcado ahí, con lo tipeado intacto para poder corregirlo, y no como
+   * un aviso flotando arriba de todo que además se va solo a los cuatro segundos.
    */
-  async submit(input: string): Promise<boolean> {
-    const text = input.trim()
-    if (!text) return false
-    const videoId = parseVideoId(text)
-    if (!videoId) {
-      this.notice('That does not look like a YouTube link. Copy the video URL and paste it here.')
-      return false
-    }
+  submit(input: string): SubmitResult {
+    const parsed = parseLink(input)
+    if (!parsed.ok) return parsed.reason === 'empty' ? { ok: true } : { ok: false, problem: parsed }
+
     this.patch({ resolving: true })
-    this.send({ type: 'resolve', videoId })
+    this.send({ type: 'resolve', videoId: parsed.videoId })
     // Red de seguridad: si oEmbed no contesta, la canción se encola igual con el id y el título
     // real llega cuando empieza a sonar. Lo que no puede quedar es el spinner girando para siempre.
     setTimeout(() => {
       if (this.view.resolving) this.patch({ resolving: false })
     }, 8000)
-    return true
+    return { ok: true }
   }
 
   add(track: Track): void {

@@ -230,6 +230,8 @@ button.action[data-primary="true"]:hover:not(:disabled) { background: var(--acce
   width: 20px; height: 20px; display: block; margin: 0 auto; fill: currentColor;
 }
 
+/* El formulario de agregar: la fila, y debajo el error del campo cuando lo hay. */
+.add { display: grid; gap: 6px; }
 .row { display: flex; gap: 8px; }
 .row input[type="text"], .row select {
   flex: 1; min-width: 0; padding: 10px 14px; border-radius: 8px;
@@ -237,6 +239,20 @@ button.action[data-primary="true"]:hover:not(:disabled) { background: var(--acce
 }
 .row input[type="text"]::placeholder { color: var(--text-faint); }
 .row input[type="text"]:focus, .row select:focus { outline: none; border-color: var(--accent); }
+
+/*
+ * Campo con un valor que no sirve. El borde queda rojo incluso con el foco puesto: mientras no se
+ * corrija, sigue estando mal, y devolverlo al azul al enfocarlo diría lo contrario justo cuando la
+ * persona vuelve a mirarlo.
+ */
+.row input[type="text"][data-invalid="true"],
+.row input[type="text"][data-invalid="true"]:focus { border-color: var(--error-text); }
+
+/*
+ * El motivo, pegado al campo. No es un banner: un error de formulario que aparece lejos del control
+ * que lo produjo obliga a buscarlo, y encima se iba solo a los cuatro segundos.
+ */
+.field-error { color: var(--error-text); font-size: 12px; line-height: 1.45; }
 
 ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; }
