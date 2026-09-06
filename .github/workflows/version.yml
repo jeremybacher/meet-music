@@ -1,0 +1,153 @@
+name: Version
+
+# Versiona y publica sola, en cada merge a main. El número sale del tipo del cambio —el prefijo
+# convencional que ya usan las ramas y los commits de este repositorio— así que no hay que
+# acordarse de bumpear nada a mano antes de mergear.
+#
+#   feat/…                                  → minor    1.0.0 → 1.1.0
+#   fix/… hotfix/… perf/…                   → patch    1.0.0 → 1.0.1
+#   un `!` o BREAKING CHANGE                → major    1.0.0 → 2.0.0
+#   docs/ chore/ ci/ test/ refactor/ style/ → no se publica nada
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Work out the next version
+    runs-on: ubuntu-latest
+    # El commit que hace este workflow vuelve a caer en main. Los pushes hechos con GITHUB_TOKEN
+    # no disparan workflows, así que el bucle ya lo corta GitHub; la condición está igual, porque
+    # depender de eso sin decirlo es una trampa para quien lea esto dentro de un año.
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      release: ${{ steps.next.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # El tipo sale de la rama del PR que se mergeó, que es lo que se nombra a conciencia. El
+      # asunto del commit es la red: en un push directo a main es lo único que hay, y cuando los
+      # dos hablan gana el más fuerte. La rama del último release decía `fix/` y el PR decía
+      # `feat:` — leyendo sólo la rama, eso se habría publicado como un parche.
+      - name: Read the type of change
+        id: type
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '.[0].head.ref // empty' 2>/dev/null || true)
+          subject=$(git log -1 --pretty=%s)
+          body=$(git log -1 --pretty=%B)
+
+          rank() {
+            case "$1" in
+              feat) echo 2 ;;
+              fix|hotfix|perf) echo 1 ;;
+              *) echo 0 ;;
+            esac
+          }
+
+          from_branch=$(printf '%s' "$branch" | sed -n 's|^\([a-z]*\)/.*|\1|p')
+          from_subject=$(printf '%s' "$subject" | sed -n 's|^\([a-z]*\)(\{0,1\}[^)]*)\{0,1\}!\{0,1\}:.*|\1|p')
+
+          best=0
+          for candidate in "$from_branch" "$from_subject"; do
+            r=$(rank "$candidate")
+            if [ "$r" -gt "$best" ]; then best=$r; fi
+          done
+
+          # Un `!` antes de los dos puntos, o BREAKING CHANGE en el cuerpo: la convención dice que
+          # eso rompe algo, y romper algo es un major sin importar el tipo que lo acompañe.
+          case "$subject" in
+            *'!:'*) best=3 ;;
+          esac
+          case "$body" in
+            *'BREAKING CHANGE'*) best=3 ;;
+          esac
+
+          case "$best" in
+            3) bump=major ;;
+            2) bump=minor ;;
+            1) bump=patch ;;
+            *) bump=none ;;
+          esac
+
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "::notice::$bump — branch '${branch:-none}', subject '$subject'"
+
+      # El punto de partida es package.json y no el último tag: así un bump hecho a mano —el salto
+      # a 1.0.0, por ejemplo— se respeta en vez de quedar pisado por la cuenta automática.
+      - name: Work out the number
+        id: next
+        run: |
+          bump="${{ steps.type.outputs.bump }}"
+          if [ "$bump" = "none" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nothing to release for this kind of change"
+            exit 0
+          fi
+
+          current=$(node -p "require('./package.json').version")
+          version=$(node -e '
+            const [major, minor, patch] = process.argv[1].split(".").map(Number)
+            const bump = process.argv[2]
+            if ([major, minor, patch].some(Number.isNaN)) throw new Error("bad version: " + process.argv[1])
+            const next =
+              bump === "major" ? [major + 1, 0, 0] :
+              bump === "minor" ? [major, minor + 1, 0] :
+              [major, minor, patch + 1]
+            console.log(next.join("."))
+          ' "$current" "$bump")
+
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "::error::v$version already exists — package.json says $current and that tag is taken"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::$current → $version"
+
+      # Las dos versiones se escriben juntas, en el mismo commit, que es justo lo que CI verifica
+      # en cada PR. Sin esto seguirían siendo dos archivos que hay que acordarse de tocar de a par.
+      - name: Write the version and tag it
+        if: steps.next.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          node -e '
+            const fs = require("fs")
+            const version = process.env.VERSION
+            for (const file of ["package.json", "src/static/manifest.json"]) {
+              const text = fs.readFileSync(file, "utf8")
+              const next = text.replace(/"version":\s*"[^"]+"/, `"version": "${version}"`)
+              if (next === text) throw new Error("no version field changed in " + file)
+              fs.writeFileSync(file, next)
+            }
+          '
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json src/static/manifest.json
+          git commit -m "chore(release): v$VERSION"
+          # Anotado, no liviano: `--follow-tags` sólo empuja los anotados, y así el commit y el
+          # tag viajan en un push único —si main se movió mientras tanto, no se publica la mitad.
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin HEAD:main --follow-tags
+
+  # El tag lo empuja GITHUB_TOKEN, y esos pushes no disparan workflows: si el release dependiera
+  # del trigger de tag se quedaría esperando para siempre. Por eso se lo llama desde acá.
+  release:
+    name: Release
+    needs: bump
+    if: needs.bump.outputs.release == 'true'
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write
+    with:
+      tag: v${{ needs.bump.outputs.version }}
