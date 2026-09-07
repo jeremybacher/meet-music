@@ -106,21 +106,29 @@ For audio issues, include:
 
 ## Cutting a release
 
-There is nothing to cut: **merging to main publishes it.** The `Version` workflow reads the type of
-the change and bumps accordingly — `feat` a minor, `fix`/`hotfix`/`perf` a patch, a `!` or a
-`BREAKING CHANGE` a major, and `docs`/`chore`/`ci`/`test`/`refactor`/`style` nothing at all. Then it
-writes both `version` fields, tags, and the release workflow builds, tests, checks that the tag
-matches the manifest and publishes the ready-to-install zip.
+There is nothing to cut: **the PR carries the version and merging publishes it.**
 
-Which means the prefix on your branch decides the version number. Name it for what the change
-actually is: a `chore/` branch carrying a feature releases nothing, and a `feat/` branch carrying a
-typo fix bumps a minor for nobody.
+Open the PR as usual. The `Version` workflow reads the type of the change and pushes a
+`chore(release): vX.Y.Z` commit **to your own branch**, with both `version` fields written — so you
+see the number in the diff before it means anything. Merge, and a second job tags what landed and
+publishes the ready-to-install zip.
 
-The type is read from the branch of the merged PR **and** from the subject of the squashed commit,
-and the stronger of the two wins — so a `fix/` branch whose PR title says `feat:` still gets its
-minor.
+| Type | Bump |
+|---|---|
+| `feat` | minor |
+| `fix`, `hotfix`, `perf` | patch |
+| `!` in the title, or a `BREAKING CHANGE:` footer | major |
+| `docs`, `chore`, `ci`, `test`, `refactor`, `style` | nothing is published |
 
-Two escape hatches. To pick the number yourself, edit `version` in `src/static/manifest.json` and
-`package.json` in the PR — the counting starts from `package.json`, so the automation continues from
-whatever you put there. To publish a tag that was never merged, push it (`git push --tags`) or run
-the release workflow from the Actions tab with the tag as its input.
+Two consequences worth having in mind:
+
+- **The prefix on your branch decides the version.** Name it for what the change actually is: a
+  `chore/` branch carrying a feature releases nothing, and a `feat/` branch carrying a typo fix
+  bumps a minor for nobody. The type is read from the branch **and** from the PR title, and the
+  stronger wins — a `fix/` branch whose title says `feat:` still gets its minor.
+- **After the bot pushes, your branch is behind.** Pull before you keep working on it.
+
+To pick the number yourself, write it into `package.json` and `src/static/manifest.json` in the PR:
+anything at or above what the automation would have chosen is left alone. To publish a tag that was
+never merged, push it (`git push --tags`) or run the release workflow from the Actions tab with the
+tag as its input.
