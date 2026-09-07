@@ -86,7 +86,9 @@ Four decisions worth knowing before touching the code:
 - Code comments are **in Spanish**, the maintainer's language. **Everything else is in English**:
   what a user sees, the documentation, and **commit messages, branch names and PR titles**.
 - Commits follow **Conventional Commits** — `feat:`, `fix:`, `docs:`, `chore:` — imperative mood and
-  lowercase subject. Branches carry the same prefix: `feat/shared-queue`, `fix/chat-draft`.
+  lowercase subject. Branches carry the same prefix: `feat/shared-queue`, `fix/chat-draft`. That
+  prefix is what picks the version number when the PR merges — see [Cutting a
+  release](#cutting-a-release).
 - The conversation on an issue or a pull request can be in either language.
 - Patterns that look for things in Meet's DOM are **multilingual**: Meet renders in each user's own
   account language, not the extension's.

@@ -114,6 +114,12 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
   not take them as the model.
 - Branches use the same conventional-type prefix and English kebab-case: `feat/shared-queue`,
   `fix/chat-draft`, never the git username.
+- **That prefix decides the released version**, so it is not a label any more — it is the input to
+  the automation. It is read off the branch *and* the PR title, and the stronger of the two wins:
+  `feat` publishes a minor, `fix`/`hotfix`/`perf` a patch, a `!` or a `BREAKING CHANGE:` footer a
+  major, and everything else publishes nothing. Name the branch for what the change actually is: a
+  `feat/` branch carrying a typo fix bumps a minor for nobody, and a `chore/` branch carrying a
+  feature ships to no one. See **Releasing** below.
 
 ## Layout
 
