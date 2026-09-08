@@ -68,6 +68,27 @@ function install(mediaDevices: MediaDevices): void {
     window.postMessage({ __bridge: BRIDGE, dir: 'to-isolated', msg }, window.location.origin)
   }
 
+  // DEBUG: rama de diagnóstico, no mergear. Filtrá la consola por "mm:dbg".
+  const dbg = (...a: unknown[]): void => console.log('[mm:dbg]', ...a)
+  const senderInfo = (s: RTCRtpSender): unknown => ({
+    track: s.track && {
+      id: s.track.id.slice(0, 8),
+      label: s.track.label,
+      kind: s.track.kind,
+      state: s.track.readyState,
+      enabled: s.track.enabled,
+      muted: s.track.muted,
+    },
+    isMix: s.track === mixedTrack,
+    dtx: (() => {
+      try {
+        return s.getParameters().encodings?.[0]
+      } catch {
+        return 'n/a'
+      }
+    })(),
+  })
+
   const musicActive = (): boolean => musicStream !== null
 
   const ensureMixer = (): Mixer => {
@@ -83,12 +104,14 @@ function install(mediaDevices: MediaDevices): void {
 
   mediaDevices.getUserMedia = async function (constraints?: MediaStreamConstraints): Promise<MediaStream> {
     const real = await originalGum(constraints)
+    dbg('getUserMedia called. audio=', !!constraints?.audio, 'audioTracks=', real.getAudioTracks().length, 'musicActive=', musicActive())
     if (!constraints || !constraints.audio || real.getAudioTracks().length === 0) return real
 
     realStream = real
 
     // Sin música, el micrófono sale intacto: cero procesamiento, cero riesgo de zumbido.
     if (!musicActive()) return real
+    dbg('getUserMedia: music active, returning the MIXED stream to Meet')
 
     try {
       const mixed = ensureMixer().createMixedStream(real)
@@ -131,12 +154,17 @@ function install(mediaDevices: MediaDevices): void {
     construct(target, args, newTarget) {
       const created = Reflect.construct(target, args, newTarget) as RTCPeerConnection
       connections.add(created)
+      dbg('PC created via proxy. connections=', connections.size, 'musicActive=', musicActive())
       created.addEventListener('connectionstatechange', () => {
+        dbg('PC connectionState=', created.connectionState)
         if (created.connectionState === 'closed') connections.delete(created)
       })
       // Cuando se suma alguien, Meet renegocia. Es el momento exacto en que aparece un emisor
       // nuevo con el micrófono crudo, así que reconciliamos ahí mismo en vez de esperar al sondeo.
-      created.addEventListener('negotiationneeded', () => void reconcileOutgoing())
+      created.addEventListener('negotiationneeded', () => {
+        dbg('PC negotiationneeded, signalingState=', created.signalingState)
+        void reconcileOutgoing()
+      })
       created.addEventListener('signalingstatechange', () => void reconcileOutgoing())
       return created
     },
@@ -169,8 +197,12 @@ function install(mediaDevices: MediaDevices): void {
     this: RTCRtpSender,
     track: MediaStreamTrack | null,
   ) {
+    if (!swapping) {
+      dbg('Meet replaceTrack(', track && { id: track.id.slice(0, 8), kind: track.kind, label: track.label }, ') musicActive=', musicActive(), 'isMic=', isMicTrack(track))
+    }
     if (!swapping && musicActive() && mixedTrack && isMicTrack(track)) {
       managed.add(this)
+      dbg('Meet replaceTrack -> swapped to MIX')
       return nativeReplaceTrack.call(this, mixedTrack)
     }
     return nativeReplaceTrack.call(this, track)
@@ -189,9 +221,11 @@ function install(mediaDevices: MediaDevices): void {
     ...streams: MediaStream[]
   ): RTCRtpSender {
     connections.add(this)
+    dbg('Meet addTrack(', { id: track.id.slice(0, 8), kind: track.kind, label: track.label }, ') musicActive=', musicActive(), 'isMic=', isMicTrack(track))
     if (musicActive() && mixedTrack && isMicTrack(track)) {
       const sender = nativeAddTrack.call(this, mixedTrack, ...streams)
       managed.add(sender)
+      dbg('Meet addTrack -> added MIX instead')
       return sender
     }
     return nativeAddTrack.call(this, track, ...streams)
@@ -204,6 +238,7 @@ function install(mediaDevices: MediaDevices): void {
     init?: RTCRtpTransceiverInit,
   ): RTCRtpTransceiver {
     connections.add(this)
+    dbg('Meet addTransceiver(', typeof trackOrKind === 'string' ? trackOrKind : { id: trackOrKind.id.slice(0, 8), kind: trackOrKind.kind }, ', dir=', init?.direction, ') musicActive=', musicActive())
     if (
       musicActive() &&
       mixedTrack &&
@@ -212,6 +247,7 @@ function install(mediaDevices: MediaDevices): void {
     ) {
       const transceiver = nativeAddTransceiver.call(this, mixedTrack, init)
       managed.add(transceiver.sender)
+      dbg('Meet addTransceiver -> with MIX')
       return transceiver
     }
     return nativeAddTransceiver.call(this, trackOrKind, init)
@@ -224,20 +260,27 @@ function install(mediaDevices: MediaDevices): void {
   const swapOutgoing = async (track: MediaStreamTrack): Promise<number> => {
     swapping = true
     let applied = 0
+    const all = audioSenders()
+    dbg('swapOutgoing: connections=', connections.size, 'audioSenders=', all.length, all.map(senderInfo))
     try {
-      for (const sender of audioSenders()) {
-        if (sender.track !== track && displayTrackIds.has(sender.track?.id ?? '')) continue
+      for (const sender of all) {
+        if (sender.track !== track && displayTrackIds.has(sender.track?.id ?? '')) {
+          dbg('swapOutgoing: skipping display sender', senderInfo(sender))
+          continue
+        }
         try {
           await nativeReplaceTrack.call(sender, track)
           managed.add(sender)
           applied++
-        } catch {
-          // Ese emisor ya no sirve; seguimos con el resto.
+          dbg('swapOutgoing: replaced sender OK', senderInfo(sender))
+        } catch (e) {
+          dbg('swapOutgoing: replaceTrack THREW', e)
         }
       }
     } finally {
       swapping = false
     }
+    dbg('swapOutgoing done. applied=', applied)
     return applied
   }
 
@@ -257,7 +300,13 @@ function install(mediaDevices: MediaDevices): void {
     const track = mixedTrack
     if (!track || track.readyState !== 'live') return
 
-    const stale = audioSenders().filter((s) => isMicTrack(s.track))
+    const all = audioSenders()
+    const stale = all.filter((s) => isMicTrack(s.track))
+    const carryingNow = all.filter((s) => s.track === track).length
+    // Ruidoso a propósito, pero no cada segundo: sólo cuando hay algo que reconciliar o nadie lleva la mezcla.
+    if (stale.length > 0 || carryingNow === 0) {
+      dbg('reconcile: audioSenders=', all.length, 'stale(mic)=', stale.length, 'carrying=', carryingNow, all.map(senderInfo))
+    }
     if (stale.length > 0) {
       swapping = true
       try {
@@ -285,6 +334,12 @@ function install(mediaDevices: MediaDevices): void {
   const startWatchers = (): void => {
     if (reconcileTimer === null) reconcileTimer = setInterval(() => void reconcileOutgoing(), 1000)
     if (watchdogTimer === null) watchdogTimer = setInterval(() => void watchOutgoing(), 3000)
+    // DEBUG: foto del estado cada 5s mientras suena música, para ver el régimen permanente.
+    setInterval(() => {
+      if (!musicActive()) return
+      const all = audioSenders()
+      dbg('SNAPSHOT connections=', connections.size, 'attached=', attached, 'senders=', all.length, all.map(senderInfo))
+    }, 5000)
   }
 
   const stopWatchers = (): void => {
@@ -320,15 +375,18 @@ function install(mediaDevices: MediaDevices): void {
     }
 
     mixedTrack = track
+    dbg('useStream: realStream audioTracks=', realStream.getAudioTracks().map((t) => ({ id: t.id.slice(0, 8), state: t.readyState, enabled: t.enabled })))
     attached = await swapOutgoing(track)
     // Se arranca igual con cero emisores: el reconciliador engancha la mezcla en cuanto Meet
     // empiece a transmitir, sin que haya que volver a apretar nada.
     startWatchers()
 
     if (attached === 0) {
+      dbg('useStream: attached=0 -> music-pending')
       post({ type: 'music-pending', reason: NOT_SENDING_YET })
       return
     }
+    dbg('useStream: attached=', attached, '-> music-attached')
     post({ type: 'music-attached' })
   }
 
