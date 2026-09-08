@@ -187,6 +187,8 @@ export class Session {
   private helloTimer: ReturnType<typeof setTimeout> | null = null
   /** El botón de micrófono de Meet, cacheado: buscarlo entre todos los botones cuesta. */
   private micEl: HTMLElement | null = null
+  /** ¿Estamos forzando el chat de Meet abierto ahora mismo? Ver `syncChatHold`. */
+  private chatHeld = false
 
   async start(): Promise<void> {
     await this.loadPeerId()
@@ -233,14 +235,14 @@ export class Session {
 
     this.chat.start((msg) => this.onChat(msg))
     this.chat.setEnabled(this.view.shareQueue)
-    this.holdChatOpen(this.view.shareQueue)
     void this.installRoomKey()
     this.patch({ canBroadcast: this.chat.canSend() })
 
-    // El chat se abre al entrar, no al primer envío. Cerrado, Meet ni siquiera monta los mensajes
-    // entrantes: quien llegaba a una reunión con música no recibía el estado y veía una sala vacía
-    // hasta que abriera el chat a mano, cosa que nadie hace porque nada se lo pide.
-    if (this.view.shareQueue) void this.openChat()
+    // El `hello` de `installRoomKey` abre el chat una vez para pedir el estado —así quien llega a
+    // una reunión con música la ve desde el primer momento— pero no lo dejamos abierto a la fuerza.
+    // Forzarlo mientras no suena nada sólo conseguía pelear con quien lo cerraba: eso queda para
+    // cuando la cola compartida está de verdad en uso, y lo decide `syncChatHold`.
+    this.syncChatHold()
 
     // Alguien nuevo en la llamada con la música ya sonando no tiene forma de saber de dónde sale.
     watchParticipants(
@@ -348,6 +350,36 @@ export class Session {
 
   private canAnnounce(): boolean {
     return this.view.announce && this.view.isHost && this.view.audio === 'on'
+  }
+
+  /**
+   * ¿La cola compartida está de verdad en uso? Alguien reproduce (o está por hacerlo), o somos
+   * invitados y ya hay un DJ. Sólo entonces el chat de Meet tiene que quedar abierto.
+   *
+   * Fuera de eso, cerrar el chat es decisión de quien lo cierra y no la peleamos: forzar el panel
+   * abierto en cada reunión, con o sin música, molesta más de lo que ayuda.
+   */
+  private chatInUse(): boolean {
+    return this.view.shareQueue && (this.view.audio !== 'off' || this.view.hostName !== null)
+  }
+
+  /**
+   * Alinea el "mantener abierto" con `chatInUse`. Actúa sólo en el cambio de estado: `setKeepOpen`
+   * pone el contador de reaperturas en cero cada vez, y llamarlo en cada `patch` nunca dejaría de
+   * insistir.
+   */
+  private syncChatHold(): void {
+    const want = this.chatInUse()
+    if (want === this.chatHeld) return
+    this.chatHeld = want
+    this.holdChatOpen(want)
+    if (want) {
+      // La música recién arrancó, o apareció un DJ: traé el chat para que la cola pueda viajar.
+      void this.openChat()
+    } else if (this.view.chatNeedsDecision) {
+      // Ya no hay nada que compartir: la pregunta de "¿lo dejo abierto?" quedó sin sentido.
+      this.patch({ chatNeedsDecision: false })
+    }
   }
 
   /**
@@ -608,12 +640,13 @@ export class Session {
 
   /** Compartir la cola implica escribir en el chat de Meet, así que es una decisión explícita. */
   setShareQueue(shareQueue: boolean): void {
+    // `patch` dispara `syncChatHold`, que arma o desarma el "mantener abierto" según corresponda.
     this.patch({ shareQueue, chatNeedsDecision: false })
     this.chat.setEnabled(shareQueue)
-    this.holdChatOpen(shareQueue)
     this.patch({ canBroadcast: this.chat.canSend() })
     void this.savePrefs()
     if (shareQueue) {
+      // Acción explícita: abrí el chat ahora y volvé a presentarte por si ya hay alguien poniendo.
       void this.openChat().then(() => this.sayHello())
     }
   }
@@ -1017,5 +1050,9 @@ export class Session {
     next.authoritative = next.isHost || next.hostName === null
     this.view = next
     for (const fn of this.listeners) fn(this.view)
+
+    // Empezar o parar la música, o que aparezca/se vaya un DJ, cambia si el chat debe quedar
+    // abierto. Es el único lugar por el que pasan esos tres campos.
+    if ('audio' in partial || 'hostName' in partial || 'shareQueue' in partial) this.syncChatHold()
   }
 }

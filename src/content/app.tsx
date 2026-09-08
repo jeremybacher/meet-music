@@ -468,14 +468,19 @@ function Banners({ view, session }: { view: SessionView; session: Session }) {
         </div>
       )}
 
-      {view.shareQueue && !view.canBroadcast && !view.chatNeedsDecision && (
-        <div class="banner" data-tone="info">
-          Sharing the queue needs the Meet chat open.
-          <button class="action" onClick={() => void session.openChat()}>
-            Open chat
-          </button>
-        </div>
-      )}
+      {/* Sólo cuando hay una cola viva que compartir: sin música, que el chat esté cerrado no
+          rompe nada y el cartel sería ruido en cada reunión. */}
+      {view.shareQueue &&
+        !view.canBroadcast &&
+        !view.chatNeedsDecision &&
+        (view.audio !== 'off' || view.hostName !== null || view.state.current !== null) && (
+          <div class="banner" data-tone="info">
+            Sharing the queue needs the Meet chat open.
+            <button class="action" onClick={() => void session.openChat()}>
+              Open chat
+            </button>
+          </div>
+        )}
 
       {view.notice && (
         <div class="banner" data-tone="info">
