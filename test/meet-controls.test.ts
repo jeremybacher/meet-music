@@ -23,12 +23,20 @@ describe('estado del micrófono de Meet', () => {
     expect(isMutedLabel('Turn on microphone', null)).toBe(true)
     expect(isMutedLabel('Unmute microphone', null)).toBe(true)
     expect(isMutedLabel('Réactiver le micro', null)).toBe(true)
+    expect(isMutedLabel('Activer le microphone', null)).toBe(true)
+    expect(isMutedLabel('Attiva microfono', null)).toBe(true)
+    expect(isMutedLabel('Ativar microfone', null)).toBe(true)
   })
 
   it('no confunde el estado normal con silenciado', () => {
     expect(isMutedLabel('Silenciar micrófono', null)).toBe(false)
     expect(isMutedLabel('Turn off microphone', null)).toBe(false)
     expect(isMutedLabel('Mute microphone', null)).toBe(false)
+    // La forma "abierta" es el mismo verbo con prefijo: no puede leerse como silenciada.
+    expect(isMutedLabel('Desactivar micrófono', null)).toBe(false)
+    expect(isMutedLabel('Desativar microfone', null)).toBe(false)
+    expect(isMutedLabel('Disattiva microfono', null)).toBe(false)
+    expect(isMutedLabel('Désactiver le microphone', null)).toBe(false)
   })
 })
 
