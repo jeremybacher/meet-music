@@ -11,7 +11,7 @@
  */
 import { BRIDGE, type Signal, type ToIsolated, type ToMain } from '../core/messages.js'
 import { DEFAULT_LEVELS, Mixer } from '../core/mixer.js'
-import { preferHighQualityOpus } from '../core/sdp.js'
+import { preferHighQualityOpus, raiseAudioBitrate } from '../core/sdp.js'
 
 const md = navigator.mediaDevices
 if (!md || typeof md.getUserMedia !== 'function') {
@@ -51,6 +51,19 @@ function install(mediaDevices: MediaDevices): void {
   let swapping = false
   /** Emisores a los que ya les pusimos una pista: los vigilamos para que no queden vacíos. */
   const managed = new Set<RTCRtpSender>()
+  /** Emisores a los que ya les subimos el bitrate para la música: no repetimos setParameters. */
+  const boosted = new WeakSet<RTCRtpSender>()
+
+  /**
+   * Le pide al emisor de Meet más bitrate mientras lleva la mezcla. Es `setParameters`, no SDP: no
+   * puede romper la negociación —lo peor que pasa es que el navegador lo ignore— así que se puede
+   * hacer sin red de por medio.
+   */
+  const boost = (sender: RTCRtpSender): void => {
+    if (boosted.has(sender)) return
+    boosted.add(sender)
+    void raiseAudioBitrate(sender)
+  }
   /**
    * Pistas de audio que NO son el micrófono: las que salen de getDisplayMedia cuando alguien
    * comparte una pestaña con sonido. Meet las manda por un emisor aparte y pisarlas con la mezcla
@@ -171,6 +184,7 @@ function install(mediaDevices: MediaDevices): void {
   ) {
     if (!swapping && musicActive() && mixedTrack && isMicTrack(track)) {
       managed.add(this)
+      boost(this)
       return nativeReplaceTrack.call(this, mixedTrack)
     }
     return nativeReplaceTrack.call(this, track)
@@ -192,6 +206,7 @@ function install(mediaDevices: MediaDevices): void {
     if (musicActive() && mixedTrack && isMicTrack(track)) {
       const sender = nativeAddTrack.call(this, mixedTrack, ...streams)
       managed.add(sender)
+      boost(sender)
       return sender
     }
     return nativeAddTrack.call(this, track, ...streams)
@@ -212,9 +227,55 @@ function install(mediaDevices: MediaDevices): void {
     ) {
       const transceiver = nativeAddTransceiver.call(this, mixedTrack, init)
       managed.add(transceiver.sender)
+      boost(transceiver.sender)
       return transceiver
     }
     return nativeAddTransceiver.call(this, trackOrKind, init)
+  }
+
+  /**
+   * Mientras suena música, Meet sigue codificando tu micrófono como voz: Opus mono, bitrate bajo y
+   * **DTX**, que corta la transmisión en lo que interpreta como silencio. En una canción eso son los
+   * pasajes instrumentales —quien escucha se queda con la voz del tema y el resto entrecortado.
+   *
+   * `preferHighQualityOpus` reescribe el `fmtp` de Opus (estéreo, mejor bitrate, `usedtx=0`) sobre
+   * el SDP que Meet está por fijar. Sólo con música: sin ella no tocamos la negociación de Meet.
+   * Cubre también la forma implícita —`setLocalDescription()` sin argumento— generando la oferta o
+   * respuesta nosotros para poder reescribirla. Si algo falla, se deja negociar como siempre.
+   */
+  const nativeSetLocalDescription = NativePeerConnection.prototype.setLocalDescription as (
+    this: RTCPeerConnection,
+    description?: RTCLocalSessionDescriptionInit,
+  ) => Promise<void>
+  const nativeCreateOffer = NativePeerConnection.prototype.createOffer as (
+    this: RTCPeerConnection,
+  ) => Promise<RTCSessionDescriptionInit>
+  const nativeCreateAnswer = NativePeerConnection.prototype.createAnswer as (
+    this: RTCPeerConnection,
+  ) => Promise<RTCSessionDescriptionInit>
+
+  NativePeerConnection.prototype.setLocalDescription = async function (
+    this: RTCPeerConnection,
+    description?: RTCLocalSessionDescriptionInit | null,
+  ): Promise<void> {
+    const passthrough = (): Promise<void> =>
+      nativeSetLocalDescription.call(this, description ?? undefined)
+
+    // Sin música, o en un rollback, no tocamos nada.
+    if (!musicActive() || description?.type === 'rollback') return passthrough()
+
+    try {
+      let init: RTCLocalSessionDescriptionInit | undefined = description ?? undefined
+      if (!init?.sdp) {
+        const make =
+          this.signalingState === 'have-remote-offer' ? nativeCreateAnswer : nativeCreateOffer
+        init = await make.call(this)
+      }
+      if (init?.sdp) init = { type: init.type, sdp: preferHighQualityOpus(init.sdp) }
+      return await nativeSetLocalDescription.call(this, init)
+    } catch {
+      return passthrough()
+    }
   }
 
   /**
@@ -230,6 +291,7 @@ function install(mediaDevices: MediaDevices): void {
         try {
           await nativeReplaceTrack.call(sender, track)
           managed.add(sender)
+          boost(sender)
           applied++
         } catch {
           // Ese emisor ya no sirve; seguimos con el resto.
@@ -265,6 +327,7 @@ function install(mediaDevices: MediaDevices): void {
           try {
             await nativeReplaceTrack.call(sender, track)
             managed.add(sender)
+            boost(sender)
           } catch {
             managed.delete(sender)
           }

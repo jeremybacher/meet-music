@@ -96,8 +96,11 @@ You can turn it off in ⚙ → *Share the queue with the meeting*, at the cost o
 
 None of these are bugs — they follow from injecting audio into the microphone.
 
-- **Music sounds worse than the original.** Meet encodes the microphone track for speech. That is the
-  price of nobody else having to install anything.
+- **Music sounds worse than the original.** Meet encodes the microphone track for speech. While music
+  is playing the extension pushes back where it can — it disables Opus DTX and raises the bitrate on
+  Meet's outgoing audio so instrumental passages stop cutting out — but the ceiling is still Meet's.
+  For the biggest single improvement, turn off **Noise cancellation** in Meet's audio settings: it is
+  designed to strip everything that is not a voice.
 - **Muting yourself with Meet's button also cuts the music**, because it is a single track. That is
   why the extension takes that button over while you are playing. If Meet's controls move somewhere
   the extension cannot find, the button falls back to its own spot next to the panel launcher.
@@ -107,8 +110,9 @@ None of these are bugs — they follow from injecting audio into the microphone.
   the volume while they last.
 - **Spotify is not possible** in this model: it plays under DRM, and protected audio cannot be
   captured.
-- **People without the extension see odd text in the chat** while the queue is shared. The one
-  message meant for them — the announcement above — is deliberately readable.
+- **People without the extension can see sync lines in the chat**, but only when someone else in the
+  call also has the extension — that is the only time there is anything to sync. When you are the
+  only one running it, the chat stays clean apart from the one readable announcement above.
 - **If the player closes their tab without stopping**, everyone else keeps seeing them as the DJ until
   someone uses *Stop and clear queue*.
 - **Meet's DOM changes without notice.** If the chat transport breaks, the extension degrades to
@@ -206,7 +210,7 @@ by hand**, with two Google accounts in a real meeting.
 | `src/content/meet-controls.ts` | Meet's mic button: its state, and where it is so ours can take its place. |
 | `src/core/announce.ts` | The one plain-text chat line, written for people without the extension. |
 | `src/core/crypto.ts` | AES-GCM keyed from the meeting code. |
-| `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |
+| `src/core/sdp.ts` | Forces stereo Opus with DTX off — on the internal link, and on Meet's outgoing audio while music plays. |
 | `src/background/service-worker.ts` | YouTube tab and signalling relay. |
 | `src/player/yt-content.ts` | YouTube side: picks up the audio and drives the `<video>`. |
 | `src/player/yt-main.ts` | YouTube MAIN world: changes song without reloading. |
