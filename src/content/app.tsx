@@ -743,6 +743,12 @@ function Sound({ view, session }: { view: SessionView; session: Session }) {
         the meeting hears it twice, slightly out of sync.
       </div>
 
+      <div class="hint">
+        If the meeting hears mostly the vocals and not the backing track, turn off{' '}
+        <strong>Noise cancellation</strong> in Meet's settings (⋮ → Settings → Audio) — it is built to
+        remove everything that is not a voice.
+      </div>
+
       <AudioDiagnostics view={view} />
     </div>
   )

@@ -74,7 +74,9 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
    the raw microphone. So `addTrack`, `addTransceiver` and `replaceTrack` are intercepted *and* a
    reconciler re-checks every sender each second. Anything that attaches once, at the moment music
    starts, is wrong for the next person through the door. Screen-share audio (`getDisplayMedia`) is
-   tracked separately and never replaced.
+   tracked separately and never replaced. `setLocalDescription` is also patched while music plays, to
+   rewrite the Opus `fmtp` on Meet's outgoing SDP (stereo, higher bitrate, DTX off) so instrumental
+   passages are not dropped as silence — outside music it is a straight passthrough.
 3. **The voice passes through no processing node**, only a gain. The limiter hangs off the music
    branch; the two branches sum only at the destination. `setLevels({ musicBroadcast })` writes to
    `musicBroadcastGain` and never to `micGain`. `test/mixer.test.ts` verifies the topology.
@@ -141,7 +143,7 @@ These are load-bearing. Breaking one is either deliberate or a bug — never inc
 | `src/core/protocol.ts` | Message types and validation. |
 | `src/core/announce.ts` | The readable chat line, written for people without the extension. |
 | `src/core/queue.ts` | Pure reducer for the queue state. |
-| `src/core/sdp.ts` | Forces stereo Opus with DTX off on the internal link. |
+| `src/core/sdp.ts` | Forces stereo Opus with DTX off — on the internal link, and on Meet's outgoing audio while music plays. |
 | `src/core/theme.ts` | Theme preference and system-theme watching. |
 | `src/background/service-worker.ts` | YouTube tab lifecycle and signalling relay. |
 | `src/player/yt-content.ts` | YouTube side: picks up the audio, drives the `<video>`. |
