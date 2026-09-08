@@ -107,8 +107,9 @@ None of these are bugs — they follow from injecting audio into the microphone.
   the volume while they last.
 - **Spotify is not possible** in this model: it plays under DRM, and protected audio cannot be
   captured.
-- **People without the extension see odd text in the chat** while the queue is shared. The one
-  message meant for them — the announcement above — is deliberately readable.
+- **People without the extension can see sync lines in the chat**, but only when someone else in the
+  call also has the extension — that is the only time there is anything to sync. When you are the
+  only one running it, the chat stays clean apart from the one readable announcement above.
 - **If the player closes their tab without stopping**, everyone else keeps seeing them as the DJ until
   someone uses *Stop and clear queue*.
 - **Meet's DOM changes without notice.** If the chat transport breaks, the extension degrades to
