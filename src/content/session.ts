@@ -915,11 +915,25 @@ export class Session {
   }
 
   /**
+   * ¿Hay otra instalación de la extensión en la reunión? Nuestro propio id no cuenta: el chat de
+   * Meet nos devuelve nuestros propios mensajes y los procesamos igual.
+   */
+  private hasExtensionPeers(): boolean {
+    for (const id of this.peers) if (id !== this.peerId) return true
+    return false
+  }
+
+  /**
    * Difunde el estado por el chat. Sólo si cambió algo visible, para no llenar la conversación de
    * mensajes ocultos.
+   *
+   * Y sólo si hay alguien que lo pueda leer. Con nadie más usando la extensión —el caso normal:
+   * el resto en el teléfono o sin instalar nada— el snapshot cifrado no sincroniza a nadie y sólo
+   * deja una línea de `[mm1] …` en el chat de todos. En cuanto aparece una extensión, su `hello`
+   * fuerza un broadcast completo (ver `case 'hello'`) y la cola se pone al día sola.
    */
   private broadcast(force = false): void {
-    if (!this.view.isHost) return
+    if (!this.view.isHost || !this.hasExtensionPeers()) return
     const payload = JSON.stringify(this.view.state)
     if (!force && payload === this.lastBroadcast) return
     this.lastBroadcast = payload
