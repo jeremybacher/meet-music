@@ -18,8 +18,17 @@
  */
 
 const MIC_LABEL = /micr[oó]fono|microphone|mikrofon|microfone|micro\b|マイク|마이크|麦克风/i
-/** Meet alterna la etiqueta entre "Silenciar micrófono" y "Activar micrófono". */
-const UNMUTE_LABEL = /activar|unmute|turn on|encender|ativar|einschalten|réactiver|attiva/i
+/**
+ * Meet nombra el botón por la acción que haría al apretarlo: con el micrófono abierto dice
+ * "Silenciar" / "Desactivar micrófono"; silenciado, "Activar micrófono". Nos interesa el segundo.
+ *
+ * El límite de palabra no es cosmético. En español, portugués e italiano la forma "abierto" es la
+ * "silenciada" con un prefijo pegado —desactivar, desativar, disattiva—, así que sin `\b` el verbo
+ * casa dentro de las dos y un micrófono abierto en español se leía como silenciado: la barra de
+ * Meet no se tapaba y aparecía un cartel de "mic muteado" con la música sonando igual.
+ */
+const UNMUTE_LABEL =
+  /\b(activar|activer|activate|attiva(?:re)?|ativar|encender|unmute|turn on|einschalten|réactiver)\b/i
 
 /** Dónde está y cómo se ve el botón que vamos a tapar. */
 export interface MicButtonBox {

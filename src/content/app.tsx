@@ -71,7 +71,11 @@ export function App() {
   /**
    * Ocupamos el lugar del botón de micrófono de Meet, pero sólo mientras apretarlo cortaría la
    * música. Si estás silenciado en Meet, el botón que necesitás es el de Meet —es el único que te
-   * devuelve el micrófono— así que le dejamos su lugar y el nuestro vuelve al dock.
+   * devuelve el micrófono— así que le dejamos su lugar.
+   *
+   * Nuestro botón de micrófono existe **sólo** como este reemplazo: nunca hay dos a la vez. Cuando
+   * no podemos taparlo —silenciado en Meet, o sin encontrar el botón— no ponemos uno al lado; el
+   * "mutear mi voz sin cortar la música" sigue estando en el panel, bajo Sonido.
    */
   const overlay = live && !view.micMuted ? view.micButton : null
 
@@ -80,11 +84,6 @@ export function App() {
       {overlay && <MuteVoiceButton view={view} session={session} box={overlay} />}
 
       <div class="dock">
-        {/* Sin música, mutear la voz es cosa del botón de Meet y un segundo botón sería una
-            mentira. Con música pero sin poder tapar el de Meet, éste es el único que hace lo
-            correcto: mejor acá que en ningún lado. */}
-        {live && !overlay && <MuteVoiceButton view={view} session={session} />}
-
         <button
           class="launcher"
           data-active={String(live)}
@@ -145,10 +144,10 @@ export function App() {
 /**
  * Callarte sin cortar la música.
  *
- * Con `box` se dibuja exactamente encima del botón de micrófono de Meet, copiándole el tamaño y los
- * colores —Meet tiene su propio tema, que no tiene por qué ser el que elegiste para el panel— para
- * que sea *el* botón de micrófono y no uno más al lado. Sin `box` vive en el dock, que es la
- * degradación cuando no se lo encuentra.
+ * Se dibuja exactamente encima del botón de micrófono de Meet, copiándole el tamaño y los colores
+ * —Meet tiene su propio tema, que no tiene por qué ser el que elegiste para el panel— para que sea
+ * *el* botón de micrófono y no uno más al lado. Sólo existe en esta forma: si no hay dónde ponerlo
+ * no se dibuja, y mutear la voz sin cortar la música queda en el panel, bajo Sonido.
  */
 function MuteVoiceButton({
   view,
@@ -157,26 +156,22 @@ function MuteVoiceButton({
 }: {
   view: SessionView
   session: Session
-  box?: MicButtonBox
+  box: MicButtonBox
 }) {
   const muted = view.voiceMuted
   // Silenciado manda el rojo de Meet; taparlo con el color del botón de abajo perdería la señal.
-  const skin = muted ? '' : `${box?.bg ? `background:${box.bg};` : ''}${box?.fg ? `color:${box.fg};` : ''}`
-  const geometry = box
-    ? `top:${box.top}px;left:${box.left}px;width:${box.width}px;height:${box.height}px;${skin}`
-    : undefined
+  const skin = muted ? '' : `${box.bg ? `background:${box.bg};` : ''}${box.fg ? `color:${box.fg};` : ''}`
+  const geometry = `top:${box.top}px;left:${box.left}px;width:${box.width}px;height:${box.height}px;${skin}`
 
   const title = muted
     ? 'Your voice is muted — the music keeps playing for the meeting. Click to speak again.'
-    : box
-      ? 'Mute your voice — the music keeps playing. While music is on this takes over Meet\u2019s mic button, which would cut the music too.'
-      : 'Mute your voice without cutting the music'
+    : 'Mute your voice — the music keeps playing. This takes over Meet\u2019s mic button, which would cut the music too.'
 
   return (
     <button
       class="launcher"
       data-muted={String(muted)}
-      data-overlay={box ? 'true' : undefined}
+      data-overlay="true"
       style={geometry}
       title={title}
       aria-label={muted ? 'Unmute your voice' : 'Mute your voice, keeping the music playing'}
@@ -468,14 +463,19 @@ function Banners({ view, session }: { view: SessionView; session: Session }) {
         </div>
       )}
 
-      {view.shareQueue && !view.canBroadcast && !view.chatNeedsDecision && (
-        <div class="banner" data-tone="info">
-          Sharing the queue needs the Meet chat open.
-          <button class="action" onClick={() => void session.openChat()}>
-            Open chat
-          </button>
-        </div>
-      )}
+      {/* Sólo cuando hay una cola viva que compartir: sin música, que el chat esté cerrado no
+          rompe nada y el cartel sería ruido en cada reunión. */}
+      {view.shareQueue &&
+        !view.canBroadcast &&
+        !view.chatNeedsDecision &&
+        (view.audio !== 'off' || view.hostName !== null || view.state.current !== null) && (
+          <div class="banner" data-tone="info">
+            Sharing the queue needs the Meet chat open.
+            <button class="action" onClick={() => void session.openChat()}>
+              Open chat
+            </button>
+          </div>
+        )}
 
       {view.notice && (
         <div class="banner" data-tone="info">
