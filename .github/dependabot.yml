@@ -1,0 +1,37 @@
+version: 2
+
+# Dependabot abre PRs para actualizar dependencias y actions. Corre los lunes, después de la
+# corrida semanal de Security (06:00 UTC), y agrupa las actualizaciones para no abrir un PR por
+# paquete. El prefijo del título importa: el workflow Version lo lee para decidir la versión.
+updates:
+  - package-ecosystem: npm # cubre pnpm: lee pnpm-lock.yaml
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: UTC
+    open-pull-requests-limit: 5
+    # Lo que viaja en el zip es un fix (parche publicado); el tooling de build y test no publica nada.
+    commit-message:
+      prefix: 'fix(deps)'
+      prefix-development: 'chore(deps-dev)'
+    groups:
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: UTC
+    commit-message:
+      prefix: 'ci(deps)'
+    groups:
+      actions:
+        patterns: ['*']
+    labels: [dependencies]
