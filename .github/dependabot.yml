@@ -17,6 +17,10 @@ updates:
       prefix: 'fix(deps)'
       prefix-development: 'chore(deps-dev)'
     groups:
+      # Los avisos de seguridad llegan en un solo PR en vez de uno por paquete vulnerable.
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
       dev-tooling:
         dependency-type: development
         update-types: [minor, patch]
@@ -33,5 +37,9 @@ updates:
       prefix: 'ci(deps)'
     groups:
       actions:
+        applies-to: version-updates
+        patterns: ['*']
+      actions-security:
+        applies-to: security-updates
         patterns: ['*']
     labels: [dependencies]
