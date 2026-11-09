@@ -1,6 +1,6 @@
 {
   "name": "meet-music",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Cola de música compartida dentro de Google Meet. El resto de la reunión escucha sin instalar nada.",
   "author": "Jeremy Bacher",
@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "preact": "^10.23.1"
+    "preact": "^11.2.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.7",
