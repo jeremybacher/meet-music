@@ -25,11 +25,11 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -62,11 +62,11 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Sin paso de build a propósito: CodeQL lee el fuente en TypeScript. Analizar el bundle
       # de esbuild sería analizar código minificado y con preact adentro, que es ruido.
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           # La extensión inyecta en el DOM de Meet, parsea lo que llega por el chat y maneja
@@ -74,6 +74,6 @@ jobs:
           # regulares que se pueden hacer explotar, criptografía mal usada).
           queries: security-extended
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: /language:javascript-typescript
